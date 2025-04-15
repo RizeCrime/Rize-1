@@ -2,6 +2,21 @@
 name = "Rize-1"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.86.0"
 
 [dependencies]
-bevy = "0.14.2"
+# bevy = { version = "0.15.*", features = ["dynamic_linking"] }
+bevy = { version = "0.15.*" }
+bevy-inspector-egui = { version = "0.30.0", optional = true }
+bevy_egui = "0.33.0"
+fixedbitset = "0.5.7"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[features]
+default = ["inspector"]
+inspector = ["bevy-inspector-egui"]
