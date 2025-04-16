@@ -29,6 +29,8 @@ pub use systems::*;
 
 mod components;
 pub use components::*;
+
+mod interpreter;
 mod ui;
 
 fn main() {
@@ -41,7 +43,7 @@ fn main() {
     bevy_app.add_plugins(
         DefaultPlugins
             .set(LogPlugin {
-                level: bevy::log::Level::INFO, 
+                level: bevy::log::Level::INFO,
                 ..Default::default()
             })
             .set(WindowPlugin {
@@ -56,6 +58,7 @@ fn main() {
 
     #[cfg(feature = "inspector")]
     bevy_app.add_plugins((
+        DefaultInspectorConfigPlugin,
         WorldInspectorPlugin::new(),
         // ResourceInspectorPlugin::<types::Registers>::default(),
     ));
@@ -69,10 +72,14 @@ pub struct RizeOne;
 
 impl Plugin for RizeOne {
     fn build(&self, app: &mut App) {
-
         app.init_state::<CpuCycleStage>();
 
         app.insert_resource(types::Registers::new());
+        app.insert_resource(types::Memory::new());
+
+        app.register_type::<types::Registers>();
+        app.register_type::<types::Memory>();
+
         app.add_systems(Startup, setup_camera);
 
         app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);

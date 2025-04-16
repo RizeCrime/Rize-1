@@ -66,3 +66,17 @@ impl BitToString for i8 {
     }
 }
 
+#[derive(
+    Default, Debug, Eq, PartialEq, Resource, Reflect, InspectorOptions,
+)]
+pub struct Memory {
+    bytes: Vec<u16>,
+}
+
+impl Memory {
+    pub fn new() -> Self {
+        Self {
+            bytes: vec![0u16; MEMORY_SIZE_BYTES],
+        }
+    }
+}
