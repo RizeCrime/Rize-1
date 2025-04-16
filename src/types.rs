@@ -5,22 +5,21 @@ use std::collections::HashMap;
 use crate::*;
 
 #[derive(Resource, Reflect, Default)]
+
 pub struct Register {
-    bits: Vec<i8>
+    bits: Vec<i8>,
 }
 
 impl Register {
     pub fn init(length: usize) -> Self {
         Self {
-            bits: vec![0i8; length]
+            bits: vec![0i8; length],
         }
     }
 }
 
 pub trait RegisterTrait {
-
     fn read(&self) -> Vec<i8>;
-
 }
 
 impl RegisterTrait for Register {
@@ -32,14 +31,15 @@ impl RegisterTrait for Register {
 /// # Inner Structure with Labels
 /// - HashMap<Name, RegisterInstance>
 #[derive(Resource, Reflect, Default, InspectorOptions)]
+
 pub struct Registers {
-    all: HashMap<String, Register>
+    all: HashMap<String, Register>,
 }
 
 impl Registers {
     pub fn new() -> Self {
         Self {
-            all: HashMap::new()
+            all: HashMap::new(),
         }
     }
 
@@ -50,9 +50,7 @@ impl Registers {
     pub fn insert(&mut self, name: String, register: Register) {
         self.all.insert(name, register);
     }
-
 }
-
 
 pub trait BitToString {
     fn bit_to_string(&self) -> String;
@@ -63,7 +61,7 @@ impl BitToString for i8 {
         match self {
             0 => "0".to_string(),
             1 => "1".to_string(),
-            _ => "?".to_string()
+            _ => "?".to_string(),
         }
     }
 }

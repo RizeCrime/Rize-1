@@ -1,9 +1,4 @@
-#![allow(
-    dead_code,
-    unused_imports,
-    unused_mut,
-    unused_variables
-)]
+#![allow(dead_code, unused_imports, unused_mut, unused_variables)]
 
 use bevy::prelude::*;
 
@@ -12,6 +7,7 @@ use bevy::{
     prelude::*,
     window::{PresentMode, WindowResolution},
 };
+
 // use bevy_egui::EguiPlugin;
 // use bevy_mod_picking::DefaultPickingPlugins;
 
@@ -19,15 +15,20 @@ use bevy::{
 use bevy_inspector_egui::quick::{
     ResourceInspectorPlugin, StateInspectorPlugin, WorldInspectorPlugin,
 };
+#[cfg(feature = "inspector")]
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 
 mod constants;
 pub use constants::*;
+
 mod types;
 pub use types::*;
+
 mod systems;
 pub use systems::*;
 
 mod components;
+pub use components::*;
 mod ui;
 
 fn main() {
@@ -50,13 +51,13 @@ fn main() {
                     ..Default::default()
                 }),
                 ..Default::default()
-            })
+            }),
     );
 
     #[cfg(feature = "inspector")]
     bevy_app.add_plugins((
         WorldInspectorPlugin::new(),
-        ResourceInspectorPlugin::<types::Registers>::default()
+        // ResourceInspectorPlugin::<types::Registers>::default(),
     ));
 
     bevy_app.add_plugins(RizeOne);
@@ -73,17 +74,16 @@ impl Plugin for RizeOne {
 
         app.insert_resource(types::Registers::new());
         app.add_systems(Startup, setup_camera);
-        app.add_systems(
-            OnEnter(CpuCycleStage::Startup), 
-            setup_registers
-        );
+
+        app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);
 
         app.add_plugins(ui::RizeOneUi);
-
+        app.add_plugins(interpreter::RizeOneInterpreter);
     }
 }
 
 #[derive(States, Default, Debug, Reflect, Hash, PartialEq, Eq, Clone, Copy)]
+
 pub enum CpuCycleStage {
     #[default]
     Startup,
