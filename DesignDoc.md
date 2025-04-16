@@ -147,8 +147,18 @@ _Bit Operation OPCODE Descriptions:_
 
 _Control Flow OPCODE Descriptions:_
 
-| OPCODE | Description                         |
-| ------ | ----------------------------------- |
-| HALT   | Stops CPU Execution.                |
-| NOP    | No Operation. An Empty Instruction. |
-|        |                                     |
+| OPCODE | Description                                          |
+| ------ | ---------------------------------------------------- |
+| HALT   | Stops CPU Execution.                                 |
+| NOP    | No Operation. An Empty Instruction.                  |
+| JMP    | Jump to ARG1.                                        |
+| JIZ    | Jumps to ARG1, if Zero Flag is True.                 |
+| JIN    | Jumps to ARG1, if Sign Flag (Negative Flag) is True. |
+|        |                                                      |
+
+
+
+
+
+
+
