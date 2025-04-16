@@ -10,7 +10,7 @@ pub struct RizeOneUi;
 impl Plugin for RizeOneUi {
     fn build(&self, app: &mut App) {
 
-        app.add_systems(Startup, setup_ui);
+        app.add_systems(Startup, setup_ui_registers);
 
     }
 }

@@ -69,10 +69,26 @@ pub struct RizeOne;
 impl Plugin for RizeOne {
     fn build(&self, app: &mut App) {
 
+        app.init_state::<CpuCycleStage>();
+
         app.insert_resource(types::Registers::new());
-        app.add_systems(Startup, (setup_camera, setup_registers));
+        app.add_systems(Startup, setup_camera);
+        app.add_systems(
+            OnEnter(CpuCycleStage::Startup), 
+            setup_registers
+        );
 
         app.add_plugins(ui::RizeOneUi);
 
     }
+}
+
+#[derive(States, Default, Debug, Reflect, Hash, PartialEq, Eq, Clone, Copy)]
+pub enum CpuCycleStage {
+    #[default]
+    Startup,
+    Fetch,
+    Decode,
+    Execute,
+    Stop,
 }

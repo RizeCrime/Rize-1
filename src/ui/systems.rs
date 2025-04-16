@@ -102,6 +102,18 @@ pub fn setup_ui_registers(
 
             }
         }
-        }
     }
+}
+
+pub fn setup_ui_cpu_cycle_stage(
+    mut commands: Commands, 
+    q_ui_root: Query<Entity, With<Name>>
+) {
+
+    let ui_root = get_ui_root_entity(q_ui_root);
+
+}
+
+fn get_ui_root_entity(q_ui_root: Query<Entity, With<Name>>) -> Entity {
+    q_ui_root.get_single().expect("Failed to get Ui Root Entity")
 }
