@@ -2,8 +2,7 @@ use bevy::prelude::*;
 
 use crate::*;
 
-pub fn setup_ui(mut commands: Commands, res_registers: Res<Registers>) {
-
+pub fn setup_ui_root(mut commands: Commands) {
     let ui_root = commands.spawn((
         Node {
             left: Val::Px(0.0),
@@ -16,6 +15,15 @@ pub fn setup_ui(mut commands: Commands, res_registers: Res<Registers>) {
         BorderColor(Color::linear_rgb(255.0, 127.0, 0.0)),
         Name::new("R1_UiRoot")
     )).id();
+}
+
+pub fn setup_ui_registers(
+    mut commands: Commands, 
+    res_registers: Res<Registers>,
+    q_ui_root: Query<Entity, With<Name>>
+) {
+
+    let ui_root = get_ui_root_entity(q_ui_root);
 
     let ui_registers = commands.spawn((
         Node {
@@ -93,7 +101,7 @@ pub fn setup_ui(mut commands: Commands, res_registers: Res<Registers>) {
                 commands.entity(bit_container).add_child(bit_value);
 
             }
-
+        }
         }
     }
 }
