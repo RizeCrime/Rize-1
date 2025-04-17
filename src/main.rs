@@ -86,6 +86,9 @@ impl Plugin for RizeOne {
 
         app.add_plugins(ui::RizeOneUi);
         app.add_plugins(interpreter::RizeOneInterpreter);
+
+        #[cfg(debug_assertions)]
+        app.add_plugins(StateInspectorPlugin::<CpuCycleStage>::default());
     }
 }
 
@@ -97,5 +100,5 @@ pub enum CpuCycleStage {
     Fetch,
     Decode,
     Execute,
-    Stop,
+    Halt,
 }

@@ -23,6 +23,6 @@ impl Plugin for RizeOneUi {
                 .chain(),
         );
 
-        app.add_systems(Update, available_programs);
+        app.add_systems(Update, (update_cpu_cycle_stage, available_programs));
     }
 }

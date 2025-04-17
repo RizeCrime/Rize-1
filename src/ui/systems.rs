@@ -149,7 +149,7 @@ pub fn setup_ui_cpu_cycle_stage(
 
     let ui_cpu_cycle_stage_value = commands
         .spawn((
-            Text::new("Initializing..."),
+            Text::new("Awaiting Tick..."),
             Name::new("ui-cpu-cycle-stage-value"),
             TextLayout {
                 justify: JustifyText::Center,
@@ -222,9 +222,56 @@ pub fn setup_available_programs(
 /// Update Systems ///
 /// -------------- ///
 
-pub fn update_cpu_cycle_stage(// CpuCycleStage  
-    // Query for State Advance Button, and the associated Text
+pub fn update_cpu_cycle_stage(
+    s_current_stage: Res<State<CpuCycleStage>>,
+    mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
+    q_advance_button: Query<
+        (&Interaction, &Name),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut q_stage_text: Query<(&mut Text, &Name), With<UiElement>>,
 ) {
+    q_advance_button
+        .iter()
+        .for_each(|(interaction, button_name)| {
+            if !(*interaction == Interaction::Pressed) {
+                return;
+            }
+            if !button_name.as_str().eq("ui-cpu-cycle-advance-button") {
+                return;
+            }
+
+            let mut stage_text = q_stage_text
+                .iter_mut()
+                .find(|(_, name)| name.as_str() == "ui-cpu-cycle-stage-value")
+                .map(|(text, _)| text)
+                .expect("Failed to find ui-cpu-cycle-stage-value");
+
+            let mut current_stage: &CpuCycleStage = s_current_stage.get();
+            match current_stage {
+                CpuCycleStage::Startup => {
+                    s_next_stage.set(CpuCycleStage::Fetch);
+                    stage_text.0 = "Fetch".into();
+                }
+                CpuCycleStage::Fetch => {
+                    s_next_stage.set(CpuCycleStage::Decode);
+                    stage_text.0 = "Decode".into();
+                }
+                CpuCycleStage::Decode => {
+                    s_next_stage.set(CpuCycleStage::Execute);
+                    stage_text.0 = "Execute".into();
+                }
+                CpuCycleStage::Execute => {
+                    s_next_stage.set(CpuCycleStage::Fetch);
+                    stage_text.0 = "Fetch".into();
+                }
+                _ => {
+                    panic!(
+                        "You shouldn't be here, and I should be doing better Error handling #2: Electric Boogaloo!"
+                    );
+                }
+            }
+        });
 }
 
 pub fn available_programs(
