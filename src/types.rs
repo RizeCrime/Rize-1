@@ -80,3 +80,63 @@ impl Memory {
         }
     }
 }
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Resource,
+    Default,
+    Reflect,
+    InspectorOptions,
+)]
+#[reflect(Resource, InspectorOptions)]
+pub enum OpCode {
+    #[default]
+    None,
+    LD,
+    ST,
+    SWP,
+    MOV,
+    ADD,
+    SUB,
+    NOT,
+    AND,
+    OR,
+    XOR,
+    HALT,
+    NOP,
+    JMP,
+    JIZ,
+    JIN,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseOpCodeError;
+
+impl std::str::FromStr for OpCode {
+    type Err = ParseOpCodeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "LD" => Ok(OpCode::LD),
+            "ST" => Ok(OpCode::ST),
+            "SWP" => Ok(OpCode::SWP),
+            "MOV" => Ok(OpCode::MOV),
+            "ADD" => Ok(OpCode::ADD),
+            "SUB" => Ok(OpCode::SUB),
+            "NOT" => Ok(OpCode::NOT),
+            "AND" => Ok(OpCode::AND),
+            "OR" => Ok(OpCode::OR),
+            "XOR" => Ok(OpCode::XOR),
+            "HALT" => Ok(OpCode::HALT),
+            "NOP" => Ok(OpCode::NOP),
+            "JMP" => Ok(OpCode::JMP),
+            "JIZ" => Ok(OpCode::JIZ),
+            "JIN" => Ok(OpCode::JIN),
+            _ => Err(ParseOpCodeError),
+        }
+    }
+}

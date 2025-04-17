@@ -1,9 +1,9 @@
-MOV GAA, 42
-MOV GBA, 69
-ADD GAA, GBA, GCA
-SUB GAA, GBA
+MOV GAA 42
+MOV GBA 69
+ADD GAA GBA GCA
+SUB GAA GBA
 
 
-// read all .azm files in src/azzembly/ 
-// list all the files as buttons 
-// on click, execute the selected azzembly file
+# read all .azm files in src/azzembly/ 
+# list all the files as buttons 
+# on click, execute the selected azzembly file

@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::BufRead;
 use std::path::PathBuf;
+use std::str::{FromStr, Lines};
 
 use bevy::prelude::*;
 use bevy_inspector_egui::prelude::*;
@@ -101,7 +102,7 @@ pub fn check_azm_programs(
             }
         };
 
-                        let path = entry.path();
+        let path = entry.path();
 
         if !path.is_file() {
             continue;
@@ -117,15 +118,15 @@ pub fn check_azm_programs(
         }
 
         // If all checks pass, add the new program
-                                    info!("Found new .azm program: {:?}", path);
-                                    let file_stem = path
-                                        .file_stem()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .to_string();
+        info!("Found new .azm program: {:?}", path);
+        let file_stem = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         r_programs.0.push((path.clone(), file_stem));
-                                }
-                            }
+    }
+}
 
 /// -------------- ///
 /// Update Systems ///
@@ -179,4 +180,61 @@ pub fn fetch(mut r_active_program: ResMut<ActiveProgram>) {
         }
     }
 }
+
+// 1) validate opcode via enum from String
+// 2) parse args from String
+pub fn decode(mut r_active_program: ResMut<ActiveProgram>) {
+    let mut program = r_active_program.as_mut();
+
+    program.opcode = OpCode::from_str(&program.raw_opcode).unwrap_or_default();
+
+    program.arg1.parsed = parse_arg(&program.arg1.raw);
+    program.arg2.parsed = parse_arg(&program.arg2.raw);
+    program.arg3.parsed = parse_arg(&program.arg3.raw);
+}
+
+pub fn execute() {}
+
+/// ---------------- ///
+/// Helper Functions ///
+/// ---------------- ///
+
+/// ### Parsing Rules
+///
+/// Rules apply in Order, returning the first match.
+///
+/// 1) if only characters       -> Register
+/// 2) if starts with '0x'      -> MemAddr
+/// 3) if is entirely digits    -> Immediate
+fn parse_arg(arg: &str) -> ArgType {
+    if arg.is_empty() {
+        return ArgType::None;
+    }
+
+    // Rule 1: Register
+    // Assuming registers are only letters, and don't conflict
+    // with the '0x' prefix or being purely numeric.
+    if arg.chars().all(|c| c.is_alphabetic()) {
+        // A simple check: is it non-empty?
+        // You might need a more specific check depending on valid register names.
+        return ArgType::Register(arg.to_string());
+    }
+
+    // Rule 2: Memory Address (Hexadecimal)
+    if let Some(hex_val) = arg.strip_prefix("0x") {
+        if let Ok(addr) = u16::from_str_radix(hex_val, 16) {
+            return ArgType::MemAddr(addr);
+        }
+        // If it starts with '0x' but doesn't parse as u16, treat as None
+        // or perhaps introduce an error type if needed.
+        return ArgType::Error;
+    }
+
+    // Rule 3: Immediate (Decimal)
+    if let Ok(imm) = arg.parse::<i16>() {
+        return ArgType::Immediate(imm);
+    }
+
+    // Default: None
+    ArgType::None
 }
