@@ -334,8 +334,6 @@ pub fn available_programs(
                 r_program.as_mut().file_stem = button_name.clone().into();
                 r_program.as_mut().contents =
                     std::io::read_to_string(&program_contents).unwrap();
-                r_program.as_mut().lines =
-                    Some(std::io::BufReader::new(program_contents));
             }
         }
     });

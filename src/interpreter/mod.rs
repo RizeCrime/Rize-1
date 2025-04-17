@@ -18,12 +18,30 @@ pub struct ActiveProgram {
     pub path: PathBuf,
     pub file_stem: String,
     pub contents: String,
-    #[reflect(ignore)]
-    pub buf_reader: Option<std::io::BufReader<std::fs::File>>,
-    pub opcode: String,
-    pub arg1: String,
-    pub arg2: String,
-    pub arg3: String,
+    pub line: usize,
+    pub raw_opcode: String,
+    pub opcode: OpCode,
+    pub arg1: ProgramArg,
+    pub arg2: ProgramArg,
+    pub arg3: ProgramArg,
+}
+
+#[derive(Resource, Default, Reflect, InspectorOptions)]
+#[reflect(Resource, InspectorOptions)]
+pub struct ProgramArg {
+    pub raw: String,
+    pub parsed: ArgType,
+}
+
+#[derive(Resource, Default, Reflect, InspectorOptions)]
+#[reflect(Resource, InspectorOptions)]
+pub enum ArgType {
+    #[default]
+    None,
+    Error,
+    Register(String),
+    MemAddr(u16),
+    Immediate(i16),
 }
 
 #[derive(Resource)]
@@ -42,6 +60,9 @@ impl Plugin for RizeOneInterpreter {
 
         app.register_type::<AzmPrograms>();
         app.register_type::<ActiveProgram>();
+
+        #[cfg(debug_assertions)]
+        app.add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default());
 
         app.add_systems(Update, check_azm_programs);
 
@@ -105,12 +126,57 @@ pub fn check_azm_programs(
         r_programs.0.push((path.clone(), file_stem));
                                 }
                             }
-                        }
-                    }
-                    Err(e) => error!("Error reading directory entry: {}", e),
-                }
+
+/// -------------- ///
+/// Update Systems ///
+/// -------------- ///
+
+pub fn fetch(mut r_active_program: ResMut<ActiveProgram>) {
+    let mut program = r_active_program.as_mut();
+
+    // Create an iterator starting from the current line
+    let mut lines_iter = program.contents.lines().skip(program.line);
+
+    loop {
+        if let Some(line_str) = lines_iter.next() {
+            let trimmed_line = line_str.trim();
+
+            // Check if the line is empty or a comment
+            if trimmed_line.is_empty() || trimmed_line.starts_with('#') {
+                program.line += 1; // Increment line counter for the skipped line
+                continue; // Try the next line
             }
+
+            // Process the valid instruction line
+            let parts: Vec<&str> = trimmed_line.split_whitespace().collect();
+            program.raw_opcode =
+                parts.get(0).copied().unwrap_or_default().to_string();
+            program.arg1 = ProgramArg {
+                raw: parts.get(1).copied().unwrap_or_default().to_string(),
+                parsed: ArgType::None,
+            };
+            program.arg2 = ProgramArg {
+                raw: parts.get(2).copied().unwrap_or_default().to_string(),
+                parsed: ArgType::None,
+            };
+            program.arg3 = ProgramArg {
+                raw: parts.get(3).copied().unwrap_or_default().to_string(),
+                parsed: ArgType::None,
+            };
+
+            program.line += 1; // Increment line counter for the processed line
+            break; // Instruction fetched, exit loop
+        } else {
+            // Reached end of file while searching for a non-empty/non-comment line
+            program.raw_opcode = String::new(); // Indicate end or issue
+            program.arg1 = ProgramArg::default();
+            program.arg2 = ProgramArg::default();
+            program.arg3 = ProgramArg::default();
+            // program.line remains at the position *after* the last line
+            break;
+
+            todo!("Set CPU State as Halted.");
         }
-        Err(e) => error!("Error reading directory {}: {}", azzembly_dir, e),
     }
+}
 }
