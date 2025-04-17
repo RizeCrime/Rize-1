@@ -1,4 +1,10 @@
-#![allow(dead_code, unused_imports, unused_mut, unused_variables)]
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_mut,
+    unused_variables,
+    unreachable_code
+)]
 
 use bevy::prelude::*;
 
