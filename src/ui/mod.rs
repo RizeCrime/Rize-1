@@ -3,11 +3,9 @@ use bevy::prelude::*;
 use crate::*;
 
 mod systems;
-
 use systems::*;
 
 mod components;
-
 pub use components::*;
 
 pub struct RizeOneUi;

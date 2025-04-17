@@ -6,7 +6,10 @@ use Display::*;
 use FlexDirection::*;
 
 use super::*;
-use crate::{interpreter::AzmPrograms, *};
+use crate::{
+    interpreter::{ActiveProgram, AzmPrograms},
+    *,
+};
 
 const UI_ROOT_NAME: &str = "R1_UiRoot";
 
@@ -219,8 +222,14 @@ pub fn setup_available_programs(
 /// Update Systems ///
 /// -------------- ///
 
+pub fn update_cpu_cycle_stage(// CpuCycleStage  
+    // Query for State Advance Button, and the associated Text
+) {
+}
+
 pub fn available_programs(
     r_programs: Res<AzmPrograms>,
+    mut r_program: ResMut<ActiveProgram>,
     qe: Query<(Entity, &Name), With<UiElement>>,
     qi: Query<(&Interaction, &Name), (Changed<Interaction>, With<Button>)>,
     mut commands: Commands,
@@ -271,6 +280,15 @@ pub fn available_programs(
         {
             if *interaction == Interaction::Pressed {
                 info!("Full Path: {:?}", path_buf);
+                let program_contents: std::fs::File =
+                    std::fs::File::open(path_buf).unwrap();
+
+                r_program.as_mut().path = path_buf.clone();
+                r_program.as_mut().file_stem = button_name.clone().into();
+                r_program.as_mut().contents =
+                    std::io::read_to_string(&program_contents).unwrap();
+                r_program.as_mut().lines =
+                    Some(std::io::BufReader::new(program_contents));
             }
         }
     });

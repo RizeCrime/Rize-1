@@ -11,6 +11,16 @@ use crate::*;
 #[reflect(Resource, InspectorOptions)]
 pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
 
+#[derive(Resource, Default, Reflect, InspectorOptions)]
+#[reflect(Resource, InspectorOptions)]
+pub struct ActiveProgram {
+    pub path: PathBuf,
+    pub file_stem: String,
+    pub contents: String,
+    #[reflect(ignore)]
+    pub lines: Option<std::io::BufReader<std::fs::File>>,
+}
+
 #[derive(Resource)]
 pub struct FileCheckTimer(Timer);
 
@@ -19,12 +29,14 @@ pub struct RizeOneInterpreter;
 impl Plugin for RizeOneInterpreter {
     fn build(&self, app: &mut App) {
         app.insert_resource(AzmPrograms::default());
+        app.insert_resource(ActiveProgram::default());
         app.insert_resource(FileCheckTimer(Timer::from_seconds(
             5.0,
             TimerMode::Repeating,
         )));
 
         app.register_type::<AzmPrograms>();
+        app.register_type::<ActiveProgram>();
 
         app.add_systems(Update, check_azm_programs);
     }
