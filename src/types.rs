@@ -1,37 +1,104 @@
 use bevy::prelude::*;
 use bevy_inspector_egui::prelude::*;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use crate::*;
+use crate::{interpreter::ArgType, *};
 
 #[derive(Resource, Reflect, Default)]
-
 pub struct Register {
-    bits: Vec<i8>,
+    #[reflect(ignore)]
+    bits: Arc<Mutex<Vec<i8>>>,
 }
 
 impl Register {
     pub fn init(length: usize) -> Self {
         Self {
-            bits: vec![0i8; length],
+            bits: Arc::new(Mutex::new(vec![0i8; length])),
         }
     }
 }
 
 pub trait RegisterTrait {
-    fn read(&self) -> Vec<i8>;
+    fn read(&self) -> Result<Vec<i8>, &'static str>;
+
+    #[doc(hidden)]
+    fn store_immediate(&self, value: usize) -> Result<(), &'static str>;
+    fn store_memaddr() -> Result<(), &'static str>;
+
+    fn store(&self, value: ArgType) -> Result<(), RizeError>;
 }
 
 impl RegisterTrait for Register {
-    fn read(&self) -> Vec<i8> {
-        self.bits.clone()
+    fn read(&self) -> Result<Vec<i8>, &'static str> {
+        let bits = self
+            .bits
+            .lock()
+            .map_err(|_| "Failed to acquire lock for reading")?;
+        Ok(bits.clone())
+    }
+
+    /// ### Dev Metadata
+    /// 1) truncate usize to u16, using Most Significant Bit First Ordering  
+    /// 2) Store the 16 bits into the register  
+    ///     - The Register is guaranteed to be [crate::constants::CPU_BITTAGE] long
+    ///     - See [crate::systems::setup_registers]
+    fn store_immediate(&self, value: usize) -> Result<(), &'static str> {
+        let mut bits = self
+            .bits
+            .lock()
+            .map_err(|_| "Failed to acquire lock for store_immediate")?;
+        let value_u16 = value as u16;
+
+        for i in 0..CPU_BITTAGE {
+            // Calculate the bit index from the right (LSB = 0) in the u16 value
+            let bit_idx_from_lsb = CPU_BITTAGE - 1 - i;
+            let bit = (value_u16 >> bit_idx_from_lsb) & 1;
+            bits[i] = bit as i8;
+        }
+        Ok(())
+    }
+
+    fn store_memaddr() -> Result<(), &'static str> {
+        todo!()
+    }
+
+    fn store(&self, value: ArgType) -> Result<(), RizeError> {
+        match value {
+            ArgType::Register(reg_name) => Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message:
+                    "Storing Type 'Register' in Type 'Register' is not allowed!"
+                        .to_string(),
+            }),
+            ArgType::MemAddr(addr) => {
+                todo!()
+            }
+            ArgType::Immediate(imm) => {
+                match self.store_immediate(imm as u16 as usize) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(RizeError {
+                        type_: RizeErrorType::Execute,
+                        message: e.to_string(),
+                    }),
+                }
+            }
+            ArgType::None => Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message:
+                    "Storing Type 'None' in Type 'Register' is not allowed!"
+                        .to_string(),
+            }),
+            ArgType::Error => {
+                todo!()
+            }
+        }
     }
 }
 
 /// # Inner Structure with Labels
 /// - HashMap<Name, RegisterInstance>
 #[derive(Resource, Reflect, Default, InspectorOptions)]
-
 pub struct Registers {
     all: HashMap<String, Register>,
 }
@@ -41,6 +108,23 @@ impl Registers {
         Self {
             all: HashMap::new(),
         }
+    }
+
+    /// ### Dev Metadata
+    /// - Check if `name` starts with 'g'
+    /// - If No:
+    ///     - Match exact name and return entire register
+    /// - If Yes, return only relevant part of register, by checking the third letter:
+    ///     - 'a' -> full width
+    ///     - 'b' -> lower half of 'a'
+    ///     - 'c' -> lower half of 'b'
+    ///     - 'd' -> lower half of 'c'
+    pub fn get(&self, name: &str) -> Option<&Register> {
+        info!("Getting Register by Name... ");
+        info!("Searching for: '{name}'");
+        info!("Available Registers: {:?}", self.all.keys());
+
+        self.all.get(name.to_ascii_lowercase().as_str())
     }
 
     pub fn all(&self) -> &HashMap<String, Register> {
@@ -139,4 +223,17 @@ impl std::str::FromStr for OpCode {
             _ => Err(ParseOpCodeError),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum RizeErrorType {
+    Fetch,
+    Decode,
+    Execute,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct RizeError {
+    pub type_: RizeErrorType,
+    pub message: String,
 }
