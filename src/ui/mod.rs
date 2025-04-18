@@ -17,6 +17,7 @@ impl Plugin for RizeOneUi {
             (
                 setup_ui_root,
                 setup_gp_registers,
+                setup_core_registers,
                 setup_ui_cpu_cycle_stage,
                 setup_available_programs,
             )

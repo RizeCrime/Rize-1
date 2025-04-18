@@ -153,6 +153,141 @@ pub fn setup_core_registers(
     r_registers: Res<Registers>,
     q_ui_root: Query<(Entity, &Name), With<UiElement>>,
 ) {
+    let ui_root = get_ui_root_from_query(&q_ui_root);
+
+    // Create main container for core registers
+    let ui_core_registers = commands
+        .spawn(create_ui_node(
+            "R1_UiCoreRegisters".into(),
+            NodeBuilder::new()
+                .display(Display::Flex)
+                .flex_direction(FlexDirection::Column)
+                .float("left") // Position bottom-left like GP registers
+                .float("bottom")
+                .build(),
+        ))
+        .id();
+
+    // Add title for core registers
+    let ui_core_registers_text = commands
+        .spawn((
+            Text::new("Core Registers"),
+            Name::new("R1_UiCoreRegistersText"),
+            create_random_border_color(),
+            UiElement,
+        ))
+        .id();
+
+    // Add container and title to the UI hierarchy
+    commands.entity(ui_root).add_child(ui_core_registers);
+    commands
+        .entity(ui_core_registers)
+        .add_child(ui_core_registers_text);
+
+    let r_registers_map = r_registers.all(); // Get the register map
+
+    // Define the names of the core registers to display
+    let core_register_names = ["mar", "mdr", "pc", "ir"];
+
+    // Iterate through the core register names
+    for name in core_register_names {
+        // Get the register data from the resource map
+        if let Some(register) = r_registers_map.get(name) {
+            // Container for the bits display (Flex Row)
+            let bits_container = commands
+                .spawn(create_ui_node(
+                    format!("ui_register_bits_{name}"),
+                    NodeBuilder::new()
+                        .display(Display::Flex)
+                        .flex_direction(FlexDirection::Row)
+                        .build(),
+                ))
+                .id();
+
+            // Text displaying the register name
+            let bits_container_text = commands
+                .spawn((
+                    Text::new(format!(" {name} :\t")), // Display register name
+                    Name::new(format!("ui-register-bits-{name}-text")),
+                    UiElement,
+                ))
+                .id();
+
+            // Placeholder Text nodes for parsed values
+            let parsed_u16 = commands
+                .spawn((
+                    Text::new("_"), // Initial placeholder
+                    Name::new(format!("ui-register-parsed-{name}-u16")),
+                    UiElement,
+                ))
+                .id();
+            let parsed_ascii = commands
+                .spawn((
+                    Text::new("_"), // Initial placeholder
+                    Name::new(format!("ui-register-parsed-{name}-ascii")),
+                    UiElement,
+                ))
+                .id();
+            let parsed_hex = commands
+                .spawn((
+                    Text::new("_"), // Initial placeholder
+                    Name::new(format!("ui-register-parsed-{name}-hex")),
+                    UiElement,
+                ))
+                .id();
+
+            // Add register name text to the bits container
+            commands
+                .entity(bits_container)
+                .add_child(bits_container_text);
+
+            // Add bits container and parsed value placeholders to the main core registers container
+            commands.entity(ui_core_registers).add_child(bits_container);
+            commands.entity(ui_core_registers).add_children(&[
+                parsed_u16,
+                parsed_hex,
+                parsed_ascii,
+            ]);
+
+            // Read the bits from the register
+            let bits = match register.read() {
+                Ok(b) => b,
+                Err(e) => {
+                    // Log error and skip this register if read fails
+                    error!("Failed to read register {}: {}", name, e);
+                    continue;
+                }
+            };
+
+            // Create UI elements for each individual bit
+            for (idx, bit) in bits.iter().enumerate() {
+                let bit_container = commands
+                    .spawn(create_ui_node(
+                        format!("ui-register-bit-{name}-{idx}"),
+                        NodeBuilder::new().float("left").build(), // Position bits left-to-right
+                    ))
+                    .id();
+
+                let bit_value = commands
+                    .spawn((
+                        Text::new(bit.bit_to_string()), // Display '0' or '1'
+                        Name::new(format!(
+                            "ui-register-bit-{name}-{idx}-value"
+                        )),
+                        UiElement,
+                    ))
+                    .id();
+
+                // Add the bit value text to its container
+                commands.entity(bit_container).add_child(bit_value);
+                // Add the bit container to the row of bits
+                commands.entity(bits_container).add_child(bit_container);
+            }
+        } else {
+            // Log a warning if a defined core register name is not found
+            warn!("Core register '{}' not found in resource map.", name);
+        }
+    }
 }
 
 pub fn setup_ui_cpu_cycle_stage(
@@ -391,26 +526,23 @@ pub fn update_registers(
     mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
 ) {
     for (name, register) in r_registers.all().iter() {
-        // Only update general-purpose registers for now, matching the setup
-        if name.starts_with('g') {
-            let bits = match register.read() {
-                Ok(b) => b,
-                Err(e) => {
-                    error!("Failed to read register {}: {}", name, e);
-                    continue; // Skip this register if reading fails
-                }
-            };
+        let bits = match register.read() {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to read register {}: {}", name, e);
+                continue; // Skip this register if reading fails
+            }
+        };
 
-            for (idx, bit) in bits.iter().enumerate() {
-                let target_name = format!("ui-register-bit-{name}-{idx}-value");
+        for (idx, bit) in bits.iter().enumerate() {
+            let target_name = format!("ui-register-bit-{name}-{idx}-value");
 
-                // Find the specific UI text element for this bit
-                for (mut text, ui_name) in q_ui.iter_mut() {
-                    if ui_name.as_str() == target_name {
-                        // Update the text content
-                        text.0 = bit.bit_to_string();
-                        break; // Found the element, move to the next bit
-                    }
+            // Find the specific UI text element for this bit
+            for (mut text, ui_name) in q_ui.iter_mut() {
+                if ui_name.as_str() == target_name {
+                    // Update the text content
+                    text.0 = bit.bit_to_string();
+                    break; // Found the element, move to the next bit
                 }
             }
         }
@@ -428,11 +560,6 @@ pub fn update_register_parsed(
     mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
 ) {
     for (name, register) in r_registers.all().iter() {
-        // Only update general-purpose registers for now
-        if !name.starts_with('g') {
-            continue;
-        }
-
         let bits = match register.read() {
             Ok(b) => b,
             Err(e) => {
