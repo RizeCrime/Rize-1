@@ -1,15 +1,16 @@
-MOV GAA 42
-MOV GBA 420
+MOV GAA 42 
+MOV GBA 1337 
+
 ADD GAA GBA GCA
-SUB GAA GBA
-
-MOV MDR 420
-MOV MAR 69
-ST
-MOV MDR 1337 
+SHL GAA
+SUB GAA GBA GDA
+SHR GBA 3
+MOV GAA MDR 
+MOV GBA MAR 
+ST 
+OR MDR 
 LD 
+XOR MDR 
+NOT GAA 
 
 
-# read all .azm files in src/azzembly/ 
-# list all the files as buttons 
-# on click, execute the selected azzembly file

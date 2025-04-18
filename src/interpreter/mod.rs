@@ -61,6 +61,8 @@ impl Plugin for RizeOneInterpreter {
             TimerMode::Repeating,
         )));
 
+        app.add_event::<CpuHaltedEvent>();
+
         app.register_type::<AzmPrograms>();
         app.register_type::<ActiveProgram>();
 
@@ -199,6 +201,7 @@ pub fn execute(
     mut r_active_program: ResMut<ActiveProgram>,
     r_registers: Res<Registers>,
     mut r_memory: ResMut<Memory>,
+    mut ew_cpu_halt: EventWriter<CpuHaltedEvent>,
 ) {
     let program = r_active_program.as_mut();
     let registers = r_registers.as_ref();
@@ -238,6 +241,62 @@ pub fn execute(
         }
         OpCode::ST => st(registers, memory),
         OpCode::LD => ld(registers, memory),
+        OpCode::AND => {
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            and(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                arg3_option,
+                registers,
+            )
+        }
+        OpCode::OR => {
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            or(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                arg3_option,
+                registers,
+            )
+        }
+        OpCode::XOR => {
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            xor(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                arg3_option,
+                registers,
+            )
+        }
+        OpCode::NOT => {
+            not(program.arg1.parsed.clone(), registers)
+        }
+        OpCode::SHL => {
+            shl(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                registers,
+            )
+        }
+        OpCode::SHR => {
+            shr(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                registers,
+            )
+        }
         _ => {
             warn!("OpCode {:?} not yet implemented!", program.opcode);
             Err(RizeError {
@@ -518,4 +577,334 @@ fn ld(registers: &Registers, memory: &Memory) -> Result<(), RizeError> {
     mdr.store_immediate(data as usize)?;
 
     Ok(())
+}
+
+fn and(
+    arg1: ArgType,
+    arg2: ArgType,
+    arg3: Option<ArgType>,
+    registers: &Registers,
+) -> Result<(), RizeError> {
+    match (arg1, arg2) {
+        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
+            let register1 =
+                registers.get(&reg1_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg1_name),
+                })?;
+            let register2 =
+                registers.get(&reg2_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg2_name),
+                })?;
+
+            let v1 = register1.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg1_name, e
+                ),
+            })?;
+            let v2 = register2.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg2_name, e
+                ),
+            })?;
+
+            let result = v1 & v2; // Bitwise AND
+
+            match arg3 {
+                Some(ArgType::Register(reg3_name)) => {
+                    let register3 =
+                        registers.get(&reg3_name).ok_or_else(|| RizeError {
+                            type_: RizeErrorType::Execute,
+                            message: format!(
+                                "Register '{}' not found!",
+                                reg3_name
+                            ),
+                        })?;
+                    register3.store_immediate(result as usize)?;
+                }
+                None => {
+                    register1.store_immediate(result as usize)?;
+                }
+                Some(_) => {
+                    return Err(RizeError {
+                        type_: RizeErrorType::Execute,
+                        message: "Third argument for 'AND' must be Type 'Register' or omitted.".to_string(),
+                    });
+                }
+            }
+            Ok(())
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Only Type 'Register' is allowed as 'AND' Argument!"
+                .to_string(),
+        }),
+    }
+}
+
+fn or(
+    arg1: ArgType,
+    arg2: ArgType,
+    arg3: Option<ArgType>,
+    registers: &Registers,
+) -> Result<(), RizeError> {
+    match (arg1, arg2) {
+        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
+            let register1 =
+                registers.get(&reg1_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg1_name),
+                })?;
+            let register2 =
+                registers.get(&reg2_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg2_name),
+                })?;
+
+            let v1 = register1.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg1_name, e
+                ),
+            })?;
+            let v2 = register2.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg2_name, e
+                ),
+            })?;
+
+            let result = v1 | v2; // Bitwise OR
+
+            match arg3 {
+                Some(ArgType::Register(reg3_name)) => {
+                    let register3 =
+                        registers.get(&reg3_name).ok_or_else(|| RizeError {
+                            type_: RizeErrorType::Execute,
+                            message: format!(
+                                "Register '{}' not found!",
+                                reg3_name
+                            ),
+                        })?;
+                    register3.store_immediate(result as usize)?;
+                }
+                None => {
+                    register1.store_immediate(result as usize)?;
+                }
+                Some(_) => {
+                    return Err(RizeError {
+                        type_: RizeErrorType::Execute,
+                        message: "Third argument for 'OR' must be Type 'Register' or omitted.".to_string(),
+                    });
+                }
+            }
+            Ok(())
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Only Type 'Register' is allowed as 'OR' Argument!"
+                .to_string(),
+        }),
+    }
+}
+
+fn xor(
+    arg1: ArgType,
+    arg2: ArgType,
+    arg3: Option<ArgType>,
+    registers: &Registers,
+) -> Result<(), RizeError> {
+    match (arg1, arg2) {
+        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
+            let register1 =
+                registers.get(&reg1_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg1_name),
+                })?;
+            let register2 =
+                registers.get(&reg2_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg2_name),
+                })?;
+
+            let v1 = register1.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg1_name, e
+                ),
+            })?;
+            let v2 = register2.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg2_name, e
+                ),
+            })?;
+
+            let result = v1 ^ v2; // Bitwise XOR
+
+            match arg3 {
+                Some(ArgType::Register(reg3_name)) => {
+                    let register3 =
+                        registers.get(&reg3_name).ok_or_else(|| RizeError {
+                            type_: RizeErrorType::Execute,
+                            message: format!(
+                                "Register '{}' not found!",
+                                reg3_name
+                            ),
+                        })?;
+                    register3.store_immediate(result as usize)?;
+                }
+                None => {
+                    register1.store_immediate(result as usize)?;
+                }
+                Some(_) => {
+                    return Err(RizeError {
+                        type_: RizeErrorType::Execute,
+                        message: "Third argument for 'XOR' must be Type 'Register' or omitted.".to_string(),
+                    });
+                }
+            }
+            Ok(())
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Only Type 'Register' is allowed as 'XOR' Argument!"
+                .to_string(),
+        }),
+    }
+}
+
+fn not(
+    arg1: ArgType, 
+    registers: &Registers
+) -> Result<(), RizeError> {
+    match arg1 {
+        ArgType::Register(reg_name) => {
+            let register = registers.get(&reg_name).ok_or_else(|| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Register '{}' not found!", reg_name),
+            })?;
+
+            let v1 = register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Failed to read register {}: {}", reg_name, e),
+            })?;
+
+            let result = !v1; // Bitwise NOT
+
+            register.store_immediate(result as usize)?;
+            Ok(())
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Argument for 'NOT' must be a Register.".to_string(),
+        }),
+    }
+}
+
+fn shl(
+    arg1: ArgType, // Target Register
+    arg2: ArgType, // Amount Immediate (Optional, defaults to 1)
+    registers: &Registers
+) -> Result<(), RizeError> {
+    match (arg1, arg2) { 
+        // Case 1: Shift amount is provided as Immediate
+        (ArgType::Register(target_reg_name), ArgType::Immediate(amount)) => {
+            let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Target Register '{}' not found!", target_reg_name),
+            })?;
+            
+            let value = target_register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Failed to read target register {}: {}", target_reg_name, e),
+            })?;
+            
+            let result = value << amount;
+            
+            target_register.store_immediate(result as usize)?;
+            Ok(())
+        }
+        // Case 2: Shift amount is omitted (ArgType::None), default to 1
+        (ArgType::Register(target_reg_name), ArgType::None) => {
+             let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Target Register '{}' not found!", target_reg_name),
+            })?;
+            
+            let value = target_register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Failed to read target register {}: {}", target_reg_name, e),
+            })?;
+            
+            let result = value << 1; // Default shift by 1
+            
+            target_register.store_immediate(result as usize)?;
+            Ok(())
+        }
+        // Updated error message for new signature
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "'SHL' requires arguments: Register (Target) [, Immediate (Amount)]. Amount defaults to 1 if omitted."
+                .to_string(),
+        }),
+    }
+}
+
+fn shr(
+    arg1: ArgType, // Target Register
+    arg2: ArgType, // Amount Immediate (Optional, defaults to 1)
+    registers: &Registers
+) -> Result<(), RizeError> {
+     match (arg1, arg2) { 
+        // Case 1: Shift amount is provided as Immediate
+        (ArgType::Register(target_reg_name), ArgType::Immediate(amount)) => {
+            let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Target Register '{}' not found!", target_reg_name),
+            })?;
+            
+            let value = target_register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Failed to read target register {}: {}", target_reg_name, e),
+            })?;
+            
+            let result = value >> amount;
+            
+            target_register.store_immediate(result as usize)?;
+            Ok(())
+        }
+        // Case 2: Shift amount is omitted (ArgType::None), default to 1
+        (ArgType::Register(target_reg_name), ArgType::None) => {
+            let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Target Register '{}' not found!", target_reg_name),
+            })?;
+            
+            let value = target_register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("Failed to read target register {}: {}", target_reg_name, e),
+            })?;
+            
+            let result = value >> 1; // Default shift by 1
+            
+            target_register.store_immediate(result as usize)?;
+            Ok(())
+        }
+        // Updated error message for new signature
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "'SHR' requires arguments: Register (Target) [, Immediate (Amount)]. Amount defaults to 1 if omitted."
+                .to_string(),
+        }),
+    }
 }

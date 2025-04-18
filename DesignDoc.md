@@ -119,20 +119,22 @@ _ALU OPCODE Descriptions:_
 
 **Bit Operation OPCODES**
 
-| OPCODE | ARG1          | ARG2          | ARG3 |
-| ------ | ------------- | ------------- | ---- |
-| NOT    | Type:Register |               |      |
-| AND    | Type:Register | Type:Register |      |
-| OR     |               |               |      |
-| XOR    |               |               |      |
-|        |               |               |      |
+| OPCODE | ARG1          | ARG2          | ARG3          |
+| ------ | ------------- | ------------- | ------------- |
+| NOT    | Type:Register |               |               |
+| AND    | Type:Register | Type:Register | Type:Register |
+| OR     |               |               |               |
+| XOR    |               |               |               |
+| SHL    | Type:Register | Type:Number   |               |
+| SHR    | Type:Register | Type:Number   |               |
 
 _Bit Operation OPCODE Descriptions:_ 
 
-| OPCODE | Description                   | ARG3 Description          |
-| ------ | ----------------------------- | ------------------------- |
-| NOT    | Negates all the Bits in ARG1. | Optional Target Register. |
-|        |                               |                           |
+| OPCODE | Description                   | Optional Description                    | 
+| ------ | ----------------------------- | --------------------------------------- |
+| NOT    | Negates all the Bits in ARG1. | Optional Target Register.               |
+| SHL    | Bitshifts ARG1 Left by One.   | Optionally Specify the Amount to Shift. |
+| SHR    | Bitshifts ARG1 Right by One.  | Optionally Specify the Amount to Shift. |
 
 **Control Flow Related OPCODES**  
 
