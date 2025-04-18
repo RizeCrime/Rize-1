@@ -187,7 +187,7 @@ pub fn setup_core_registers(
     let r_registers_map = r_registers.all(); // Get the register map
 
     // Define the names of the core registers to display
-    let core_register_names = ["mar", "mdr", "pc", "ir"];
+    let core_register_names = ["mar", "mdr", "pc"];
 
     // Iterate through the core register names
     for name in core_register_names {
