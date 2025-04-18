@@ -1,7 +1,13 @@
 MOV GAA 42
-MOV GBA 69
+MOV GBA 420
 ADD GAA GBA GCA
 SUB GAA GBA
+
+MOV MDR 420
+MOV MAR 69
+ST
+MOV MDR 1337 
+LD 
 
 
 # read all .azm files in src/azzembly/ 

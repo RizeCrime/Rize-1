@@ -184,6 +184,36 @@ impl Memory {
             bytes: vec![0u16; MEMORY_SIZE_BYTES],
         }
     }
+    pub fn write(&mut self, address: u16, data: u16) -> Result<(), RizeError> {
+        if address as usize >= MEMORY_SIZE_BYTES {
+            return Err(RizeError {
+                type_: RizeErrorType::MemoryWrite,
+                message: format!(
+                    "Memory Address Out Of Range! Addr: {}, Max: {}",
+                    address,
+                    MEMORY_SIZE_BYTES - 1
+                ),
+            });
+        }
+
+        self.bytes[address as usize] = data;
+        Ok(())
+    }
+
+    pub fn read(&self, address: u16) -> Result<u16, RizeError> {
+        if address as usize >= MEMORY_SIZE_BYTES {
+            return Err(RizeError {
+                type_: RizeErrorType::MemoryRead,
+                message: format!(
+                    "Memory Address Out Of Range! Addr: {}, Max: {}",
+                    address,
+                    MEMORY_SIZE_BYTES - 1
+                ),
+            });
+        }
+
+        Ok(self.bytes[address as usize])
+    }
 }
 
 #[derive(
@@ -251,6 +281,10 @@ pub enum RizeErrorType {
     Fetch,
     Decode,
     Execute,
+    MemoryWrite,
+    MemoryRead,
+    RegisterRead,
+    RegisterWrite,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

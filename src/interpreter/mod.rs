@@ -198,22 +198,19 @@ pub fn decode(mut r_active_program: ResMut<ActiveProgram>) {
 pub fn execute(
     mut r_active_program: ResMut<ActiveProgram>,
     r_registers: Res<Registers>,
+    mut r_memory: ResMut<Memory>,
 ) {
     let program = r_active_program.as_mut();
-    let registers = r_registers.as_ref(); // Get a reference to Registers
+    let registers = r_registers.as_ref();
+    let memory = r_memory.as_mut();
 
-    // All opcodes should return a Result
     let execution_result = match program.opcode {
-        OpCode::MOV => {
-            // Pass registers down to mov
-            mov(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                registers, // Pass the registers reference
-            )
-        }
+        OpCode::MOV => mov(
+            program.arg1.parsed.clone(),
+            program.arg2.parsed.clone(),
+            registers,
+        ),
         OpCode::ADD => {
-            // Determine the third argument: None if raw string is empty, Some(parsed) otherwise
             let arg3_option = if program.arg3.raw.is_empty() {
                 None
             } else {
@@ -227,7 +224,6 @@ pub fn execute(
             )
         }
         OpCode::SUB => {
-            // Determine the third argument similarly to ADD
             let arg3_option = if program.arg3.raw.is_empty() {
                 None
             } else {
@@ -240,14 +236,8 @@ pub fn execute(
                 registers,
             )
         }
-        OpCode::ST => {
-            // TODO: Implement ST
-            warn!("OpCode ST not yet implemented!");
-            Err(RizeError {
-                type_: RizeErrorType::Execute,
-                message: "OpCode ST not implemented".to_string(),
-            })
-        }
+        OpCode::ST => st(registers, memory),
+        OpCode::LD => ld(registers, memory),
         _ => {
             warn!("OpCode {:?} not yet implemented!", program.opcode);
             Err(RizeError {
@@ -477,4 +467,55 @@ fn sub(
                 .to_string(),
         }),
     }
+}
+
+fn st(registers: &Registers, memory: &mut Memory) -> Result<(), RizeError> {
+    let mar = registers.get("mar").ok_or_else(|| RizeError {
+        type_: RizeErrorType::Execute,
+        message: "Register 'MAR' not found!".to_string(),
+    })?;
+    let mdr = registers.get("mdr").ok_or_else(|| RizeError {
+        type_: RizeErrorType::Execute,
+        message: "Register 'MDR' not found!".to_string(),
+    })?;
+
+    let address = mar.read_u16().map_err(|e| RizeError {
+        type_: RizeErrorType::Execute,
+        message: format!("Failed to read register MAR: {}", e),
+    })?;
+
+    let data = mdr.read_u16().map_err(|e| RizeError {
+        type_: RizeErrorType::Execute,
+        message: format!("Failed to read register MDR: {}", e),
+    })?;
+
+    memory.write(address, data)?;
+
+    Ok(())
+}
+
+fn ld(registers: &Registers, memory: &Memory) -> Result<(), RizeError> {
+    // Get MAR and MDR registers
+    let mar = registers.get("mar").ok_or_else(|| RizeError {
+        type_: RizeErrorType::Execute,
+        message: "Register 'MAR' not found!".to_string(),
+    })?;
+    let mdr = registers.get("mdr").ok_or_else(|| RizeError {
+        type_: RizeErrorType::Execute,
+        message: "Register 'MDR' not found!".to_string(),
+    })?;
+
+    // Read address from MAR
+    let address = mar.read_u16().map_err(|e| RizeError {
+        type_: RizeErrorType::Execute,
+        message: format!("Failed to read register MAR: {}", e),
+    })?;
+
+    // Read data from memory using the address
+    let data = memory.read(address)?;
+
+    // Store the data into MDR
+    mdr.store_immediate(data as usize)?;
+
+    Ok(())
 }
