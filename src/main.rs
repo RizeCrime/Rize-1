@@ -62,7 +62,7 @@ fn main() {
             }),
     );
 
-    #[cfg(feature = "inspector")]
+    #[cfg(debug_assertions)]
     bevy_app.add_plugins((
         DefaultInspectorConfigPlugin,
         WorldInspectorPlugin::new(),

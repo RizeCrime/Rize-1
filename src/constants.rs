@@ -7,4 +7,4 @@ pub const INSTRUCTION_WIDTH: usize = 56;
 pub const MEMORY_SIZE_BYTES: usize = 2048;
 
 // Other
-pub const AZZEMBLY_DIR: &str = "src/azzembly/";
+pub const AZZEMBLY_DIR: &str = "azzembly/";
