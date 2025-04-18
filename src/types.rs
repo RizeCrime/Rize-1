@@ -21,9 +21,12 @@ impl Register {
 
 pub trait RegisterTrait {
     fn read(&self) -> Result<Vec<i8>, &'static str>;
+    fn read_u16(&self) -> Result<u16, &'static str>;
+    fn read_ascii(&self) -> Result<String, &'static str>;
+    fn read_hex(&self) -> Result<String, &'static str>;
 
     #[doc(hidden)]
-    fn store_immediate(&self, value: usize) -> Result<(), &'static str>;
+    fn store_immediate(&self, value: usize) -> Result<(), RizeError>;
     fn store_memaddr() -> Result<(), &'static str>;
 
     fn store(&self, value: ArgType) -> Result<(), RizeError>;
@@ -38,16 +41,40 @@ impl RegisterTrait for Register {
         Ok(bits.clone())
     }
 
+    fn read_u16(&self) -> Result<u16, &'static str> {
+        let bits = self.read()?;
+        let mut value: u16 = 0;
+        for (i, bit) in bits.iter().enumerate() {
+            value |= (*bit as u16) << (CPU_BITTAGE - 1 - i);
+        }
+        Ok(value)
+    }
+
+    fn read_ascii(&self) -> Result<String, &'static str> {
+        let value_u16 = self.read_u16()?;
+        let bytes = value_u16.to_le_bytes(); // Get bytes in little-endian order
+        let ascii_string: String = bytes
+            .iter()
+            .map(|&b| if b.is_ascii_graphic() { b as char } else { ' ' }) // Replace non-graphic with space
+            .collect();
+        Ok(ascii_string)
+    }
+
+    fn read_hex(&self) -> Result<String, &'static str> {
+        let value_u16 = self.read_u16()?;
+        Ok(format!("0x{:04X}", value_u16)) // Format as 4-digit hex with 0x prefix
+    }
+
     /// ### Dev Metadata
     /// 1) truncate usize to u16, using Most Significant Bit First Ordering  
     /// 2) Store the 16 bits into the register  
     ///     - The Register is guaranteed to be [crate::constants::CPU_BITTAGE] long
     ///     - See [crate::systems::setup_registers]
-    fn store_immediate(&self, value: usize) -> Result<(), &'static str> {
-        let mut bits = self
-            .bits
-            .lock()
-            .map_err(|_| "Failed to acquire lock for store_immediate")?;
+    fn store_immediate(&self, value: usize) -> Result<(), RizeError> {
+        let mut bits = self.bits.lock().map_err(|_| RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Failed to acquire lock for store_immediate".to_string(),
+        })?;
         let value_u16 = value as u16;
 
         for i in 0..CPU_BITTAGE {
@@ -75,13 +102,7 @@ impl RegisterTrait for Register {
                 todo!()
             }
             ArgType::Immediate(imm) => {
-                match self.store_immediate(imm as u16 as usize) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(RizeError {
-                        type_: RizeErrorType::Execute,
-                        message: e.to_string(),
-                    }),
-                }
+                self.store_immediate(imm as u16 as usize)
             }
             ArgType::None => Err(RizeError {
                 type_: RizeErrorType::Execute,
