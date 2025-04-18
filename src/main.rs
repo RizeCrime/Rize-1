@@ -66,7 +66,7 @@ fn main() {
     bevy_app.add_plugins((
         DefaultInspectorConfigPlugin,
         WorldInspectorPlugin::new(),
-        // ResourceInspectorPlugin::<types::Registers>::default(),
+        ResourceInspectorPlugin::<types::Registers>::default(),
     ));
 
     bevy_app.add_plugins(RizeOne);

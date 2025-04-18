@@ -59,7 +59,7 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
         // Convert index to letter (0->a, 1->b, etc)
         let letter = (b'a' + i as u8) as char;
 
-        let reg_name = format!("g{}", letter);
+        let reg_name = format!("g{}a", letter);
 
         let gpr = Register::init(CPU_BITTAGE);
 

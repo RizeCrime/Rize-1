@@ -34,7 +34,7 @@ pub struct ProgramArg {
     pub parsed: ArgType,
 }
 
-#[derive(Resource, Default, Reflect, InspectorOptions)]
+#[derive(Resource, Default, Reflect, InspectorOptions, Clone)]
 #[reflect(Resource, InspectorOptions)]
 pub enum ArgType {
     #[default]
@@ -55,7 +55,7 @@ impl Plugin for RizeOneInterpreter {
         app.insert_resource(AzmPrograms::default());
         app.insert_resource(ActiveProgram::default());
         app.insert_resource(FileCheckTimer(Timer::from_seconds(
-            5.0,
+            0.25,
             TimerMode::Repeating,
         )));
 
