@@ -34,7 +34,9 @@ pub struct ProgramArg {
     pub parsed: ArgType,
 }
 
-#[derive(Resource, Default, Reflect, InspectorOptions, Clone)]
+#[derive(
+    Resource, Default, Reflect, InspectorOptions, Clone, Eq, PartialEq,
+)]
 #[reflect(Resource, InspectorOptions)]
 pub enum ArgType {
     #[default]
@@ -42,7 +44,7 @@ pub enum ArgType {
     Error,
     Register(String),
     MemAddr(u16),
-    Immediate(i16),
+    Immediate(u16),
 }
 
 #[derive(Resource)]
@@ -193,7 +195,82 @@ pub fn decode(mut r_active_program: ResMut<ActiveProgram>) {
     program.arg3.parsed = parse_arg(&program.arg3.raw);
 }
 
-pub fn execute() {}
+pub fn execute(
+    mut r_active_program: ResMut<ActiveProgram>,
+    r_registers: Res<Registers>,
+) {
+    let program = r_active_program.as_mut();
+    let registers = r_registers.as_ref(); // Get a reference to Registers
+
+    // All opcodes should return a Result
+    let execution_result = match program.opcode {
+        OpCode::MOV => {
+            // Pass registers down to mov
+            mov(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                registers, // Pass the registers reference
+            )
+        }
+        OpCode::ADD => {
+            // Determine the third argument: None if raw string is empty, Some(parsed) otherwise
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            add(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                arg3_option,
+                registers,
+            )
+        }
+        OpCode::SUB => {
+            // Determine the third argument similarly to ADD
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            sub(
+                program.arg1.parsed.clone(),
+                program.arg2.parsed.clone(),
+                arg3_option,
+                registers,
+            )
+        }
+        OpCode::ST => {
+            // TODO: Implement ST
+            warn!("OpCode ST not yet implemented!");
+            Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: "OpCode ST not implemented".to_string(),
+            })
+        }
+        _ => {
+            warn!("OpCode {:?} not yet implemented!", program.opcode);
+            Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!("OpCode {:?} not implemented", program.opcode),
+            })
+        }
+    };
+
+    // Handle the result of the execution
+    if let Err(e) = execution_result {
+        error!(
+            "Execution Error ({:?}): {} (Op: {}, Args: '{}', '{}', '{}')",
+            e.type_,
+            e.message,
+            program.raw_opcode,
+            program.arg1.raw,
+            program.arg2.raw,
+            program.arg3.raw
+        );
+        // Potentially set a CPU Halted state here in the future
+    }
+}
 
 /// ---------------- ///
 /// Helper Functions ///
@@ -231,10 +308,173 @@ fn parse_arg(arg: &str) -> ArgType {
     }
 
     // Rule 3: Immediate (Decimal)
-    if let Ok(imm) = arg.parse::<i16>() {
+    if let Ok(imm) = arg.parse::<u16>() {
         return ArgType::Immediate(imm);
     }
 
     // Default: None
     ArgType::None
+}
+
+fn mov(
+    arg1: ArgType,
+    arg2: ArgType,
+    registers: &Registers, // Add registers parameter
+) -> Result<(), RizeError> {
+    match arg1 {
+        ArgType::Register(reg) => {
+            let register =
+                registers.get(&reg).expect("Register '{reg}' not found!");
+            register.store(arg2)?;
+            Ok(())
+        }
+        ArgType::MemAddr(addr) => {
+            todo!()
+        }
+        ArgType::Immediate(imm) => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Type 'Immediate' cannot be first Argument to 'MOV'!"
+                .to_string(),
+        }),
+        _ => {
+            todo!()
+        }
+    }
+}
+
+fn add(
+    arg1: ArgType,
+    arg2: ArgType,
+    arg3: Option<ArgType>,
+    registers: &Registers,
+) -> Result<(), RizeError> {
+    match (arg1, arg2) {
+        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
+            let register1 =
+                registers.get(&reg1_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg1_name),
+                })?;
+            let register2 =
+                registers.get(&reg2_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg2_name),
+                })?;
+
+            let v1 = register1.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg1_name, e
+                ),
+            })?;
+            let v2 = register2.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg2_name, e
+                ),
+            })?;
+
+            let result = v1.wrapping_add(v2);
+
+            match arg3 {
+                Some(ArgType::Register(reg3_name)) => {
+                    let register3 =
+                        registers.get(&reg3_name).ok_or_else(|| RizeError {
+                            type_: RizeErrorType::Execute,
+                            message: format!(
+                                "Register '{}' not found!",
+                                reg3_name
+                            ),
+                        })?;
+                    register3.store_immediate(result as usize)?;
+                }
+                None => {
+                    register1.store_immediate(result as usize)?;
+                }
+                Some(_) => {
+                    return Err(RizeError {
+                        type_: RizeErrorType::Execute,
+                        message: "Third argument for 'ADD' must be Type 'Register' or omitted.".to_string(),
+                    });
+                }
+            }
+            Ok(())
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Only Type 'Register' is allowed as 'ADD' Argument!"
+                .to_string(),
+        }),
+    }
+}
+
+fn sub(
+    arg1: ArgType,
+    arg2: ArgType,
+    arg3: Option<ArgType>,
+    registers: &Registers,
+) -> Result<(), RizeError> {
+    match (arg1, arg2) {
+        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
+            let register1 =
+                registers.get(&reg1_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg1_name),
+                })?;
+            let register2 =
+                registers.get(&reg2_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg2_name),
+                })?;
+
+            let v1 = register1.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg1_name, e
+                ),
+            })?;
+            let v2 = register2.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {}: {}",
+                    reg2_name, e
+                ),
+            })?;
+
+            // Use wrapping_sub for safety against underflow
+            let result = v1.wrapping_sub(v2);
+
+            match arg3 {
+                Some(ArgType::Register(reg3_name)) => {
+                    let register3 =
+                        registers.get(&reg3_name).ok_or_else(|| RizeError {
+                            type_: RizeErrorType::Execute,
+                            message: format!(
+                                "Register '{}' not found!",
+                                reg3_name
+                            ),
+                        })?;
+                    register3.store_immediate(result as usize)?;
+                }
+                None => {
+                    register1.store_immediate(result as usize)?;
+                }
+                Some(_) => {
+                    return Err(RizeError {
+                        type_: RizeErrorType::Execute,
+                        message: "Third argument for 'SUB' must be Type 'Register' or omitted.".to_string(),
+                    });
+                }
+            }
+            Ok(())
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Only Type 'Register' is allowed as 'SUB' Argument!"
+                .to_string(),
+        }),
+    }
 }
