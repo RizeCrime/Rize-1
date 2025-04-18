@@ -290,6 +290,70 @@ pub fn setup_core_registers(
     }
 }
 
+pub fn setup_instruction_ui(
+    mut commands: Commands,
+    q_ui_root: Query<(Entity, &Name), With<UiElement>>,
+) {
+    let ui_root = get_ui_root_from_query(&q_ui_root);
+
+    let ui_instruction_container = commands
+        .spawn(create_ui_node(
+            "ui-instruction-container".into(),
+            NodeBuilder::new()
+                .absolute()
+                .width(Val::Percent(35.0))
+                .height(Val::Percent(20.0))
+                .float("top")
+                .margin(UiRect {
+                    left: Val::Auto,
+                    right: Val::Auto,
+                    top: Val::Percent(5.0),
+                    bottom: Val::Auto,
+                })
+                .display(Flex)
+                .flex_direction(Row)
+                .build(),
+        ))
+        .id();
+
+    commands.entity(ui_root).add_child(ui_instruction_container);
+
+    let names = ["OPCODE", "ARG1", "ARG2", "ARG3"];
+    for name in names {
+        let container = commands
+            .spawn(create_ui_node(
+                format!("ui-{name}-container"),
+                NodeBuilder::new()
+                    .width(Val::Percent(25.0))
+                    .flex_direction(Column)
+                    .build(),
+            ))
+            .id();
+
+        commands
+            .entity(ui_instruction_container)
+            .add_child(container);
+
+        let text = commands
+            .spawn((
+                Text::new("Opcode:"),
+                Name::new(format!("ui-{name}-text")),
+                UiElement,
+            ))
+            .id();
+
+        let value = commands
+            .spawn((
+                Text::new("None"),
+                Name::new(format!("ui-{name}-value")),
+                UiElement,
+            ))
+            .id();
+
+        commands.entity(container).add_children(&[text, value]);
+    }
+}
+
 pub fn setup_ui_cpu_cycle_stage(
     mut commands: Commands,
     q_ui_root: Query<(Entity, &Name), With<UiElement>>,
@@ -598,6 +662,34 @@ pub fn update_register_parsed(
         for (mut text, ui_name) in q_ui.iter_mut() {
             if ui_name.as_str() == target_hex_name {
                 text.0 = hex_value.clone();
+                break;
+            }
+        }
+    }
+}
+
+pub fn update_instruction_ui(
+    r_active_program: Res<ActiveProgram>,
+    mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
+) {
+    let opcode = &r_active_program.raw_opcode;
+    let arg1 = &r_active_program.arg1.raw;
+    let arg2 = &r_active_program.arg2.raw;
+    let arg3 = &r_active_program.arg3.raw;
+
+    let instruction_parts = [
+        ("OPCODE", opcode),
+        ("ARG1", arg1),
+        ("ARG2", arg2),
+        ("ARG3", arg3),
+    ];
+
+    for (ui_name_base, part_value) in instruction_parts.iter() {
+        let target_ui_name = format!("ui-{ui_name_base}-value");
+
+        for (mut text, ui_name) in q_ui.iter_mut() {
+            if ui_name.as_str() == target_ui_name {
+                text.0 = part_value.to_string();
                 break;
             }
         }

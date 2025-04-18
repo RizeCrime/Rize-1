@@ -20,6 +20,7 @@ impl Plugin for RizeOneUi {
                 setup_core_registers,
                 setup_ui_cpu_cycle_stage,
                 setup_available_programs,
+                setup_instruction_ui,
             )
                 .chain(),
         );
@@ -31,6 +32,7 @@ impl Plugin for RizeOneUi {
                 available_programs,
                 update_registers,
                 update_register_parsed,
+                update_instruction_ui,
             ),
         );
     }
