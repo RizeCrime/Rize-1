@@ -29,7 +29,7 @@ pub fn setup_ui_root(mut commands: Commands) {
         .id();
 }
 
-pub fn setup_ui_registers(
+pub fn setup_gp_registers(
     mut commands: Commands,
     r_registers: Res<Registers>,
     q_ui_root: Query<(Entity, &Name), With<UiElement>>,
@@ -82,16 +82,51 @@ pub fn setup_ui_registers(
                 ))
                 .id();
 
+            let parsed_u16 = commands
+                .spawn((
+                    Text::new("_"),
+                    Name::new(format!("ui-register-parsed-{name}-u16")),
+                    UiElement,
+                ))
+                .id();
+            let parsed_ascii = commands
+                .spawn((
+                    Text::new("_"),
+                    Name::new(format!("ui-register-parsed-{name}-ascii")),
+                    UiElement,
+                ))
+                .id();
+            let parsed_hex = commands
+                .spawn((
+                    Text::new("_"),
+                    Name::new(format!("ui-register-parsed-{name}-hex")),
+                    UiElement,
+                ))
+                .id();
+
             commands
                 .entity(bits_container)
                 .add_child(bits_container_text);
 
             commands.entity(ui_registers).add_child(bits_container);
+            commands.entity(ui_registers).add_children(&[
+                parsed_u16,
+                parsed_hex,
+                parsed_ascii,
+            ]);
 
-            for bit in register.read() {
+            let bits = match register.read() {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("Failed to read register {}: {}", name, e);
+                    continue;
+                }
+            };
+
+            for (idx, bit) in bits.iter().enumerate() {
                 let bit_container = commands
                     .spawn(create_ui_node(
-                        format!("ui-register-bit-{name}-{bit}"),
+                        format!("ui-register-bit-{name}-{idx}"),
                         NodeBuilder::new().float("left").build(),
                     ))
                     .id();
@@ -100,18 +135,24 @@ pub fn setup_ui_registers(
                     .spawn((
                         Text::new(bit.bit_to_string()),
                         Name::new(format!(
-                            "ui-register-bit-{name}-{bit}-value"
+                            "ui-register-bit-{name}-{idx}-value"
                         )),
                         UiElement,
                     ))
                     .id();
 
                 commands.entity(bits_container).add_child(bit_container);
-
                 commands.entity(bit_container).add_child(bit_value);
             }
         }
     }
+}
+
+pub fn setup_core_registers(
+    mut commands: Commands,
+    r_registers: Res<Registers>,
+    q_ui_root: Query<(Entity, &Name), With<UiElement>>,
+) {
 }
 
 pub fn setup_ui_cpu_cycle_stage(
@@ -339,9 +380,120 @@ pub fn available_programs(
     });
 }
 
+/// ### Dev Metadata
+/// 1) for each register, try to find the corresponding ui elements
+///     - each bit can be found by their name
+///         - "ui-register-bit-{name}-{idx}"
+/// 2) update bit state with data from reg.read().iter().enumerate()
+pub fn update_registers(
+    mut commands: Commands,
+    r_registers: Res<Registers>,
+    mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
+) {
+    for (name, register) in r_registers.all().iter() {
+        // Only update general-purpose registers for now, matching the setup
+        if name.starts_with('g') {
+            let bits = match register.read() {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("Failed to read register {}: {}", name, e);
+                    continue; // Skip this register if reading fails
+                }
+            };
+
+            for (idx, bit) in bits.iter().enumerate() {
+                let target_name = format!("ui-register-bit-{name}-{idx}-value");
+
+                // Find the specific UI text element for this bit
+                for (mut text, ui_name) in q_ui.iter_mut() {
+                    if ui_name.as_str() == target_name {
+                        // Update the text content
+                        text.0 = bit.bit_to_string();
+                        break; // Found the element, move to the next bit
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// ### Dev Metadata
+/// - for each register
+///     - get name and bits
+///     - get matching ui Text by Name
+///     - for each value type
+///         - parse bits into value type
+pub fn update_register_parsed(
+    r_registers: Res<Registers>,
+    mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
+) {
+    for (name, register) in r_registers.all().iter() {
+        // Only update general-purpose registers for now
+        if !name.starts_with('g') {
+            continue;
+        }
+
+        let bits = match register.read() {
+            Ok(b) => b,
+            Err(e) => {
+                error!("Failed to read register {}: {}", name, e);
+                continue; // Skip this register if reading fails
+            }
+        };
+
+        // --- Parse and Update U16 ---
+        let u16_value = bits_to_u16(&bits).to_string();
+        let target_u16_name = format!("ui-register-parsed-{name}-u16");
+        for (mut text, ui_name) in q_ui.iter_mut() {
+            if ui_name.as_str() == target_u16_name {
+                text.0 = u16_value.clone();
+                break;
+            }
+        }
+
+        // --- Parse and Update ASCII ---
+        let ascii_value: String = bits_to_u16(&bits)
+            .to_le_bytes()
+            .iter()
+            .map(|&b| if b.is_ascii_graphic() { b as char } else { ' ' }) // Replace non-printable with '.'
+            .collect();
+        let target_ascii_name = format!("ui-register-parsed-{name}-ascii");
+        for (mut text, ui_name) in q_ui.iter_mut() {
+            if ui_name.as_str() == target_ascii_name {
+                text.0 = ascii_value.clone();
+                break;
+            }
+        }
+
+        // --- Parse and Update Hex ---
+        let hex_value = format!("0x{:04X}", bits_to_u16(&bits)); // Format as 4-digit hex
+        let target_hex_name = format!("ui-register-parsed-{name}-hex");
+        for (mut text, ui_name) in q_ui.iter_mut() {
+            if ui_name.as_str() == target_hex_name {
+                text.0 = hex_value.clone();
+                break;
+            }
+        }
+    }
+}
+
 /// ---------------- ///
 /// Helper Functions ///
 /// ---------------- ///
+
+/// Converts a slice of i8 (representing bits, 0 or 1) into a u16.
+/// Assumes MSB first ordering within the slice.
+fn bits_to_u16(bits: &[i8]) -> u16 {
+    let mut value: u16 = 0;
+    for &bit in bits {
+        value <<= 1; // Shift existing bits left
+        if bit == 1 {
+            value |= 1; // Set the least significant bit if the current bit is 1
+        }
+        // If bit is 0, no change needed after the shift
+    }
+    value
+}
 
 // Helper struct for building Node components using the builder pattern
 struct NodeBuilder {

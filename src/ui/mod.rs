@@ -16,13 +16,21 @@ impl Plugin for RizeOneUi {
             Startup,
             (
                 setup_ui_root,
-                setup_ui_registers,
+                setup_gp_registers,
                 setup_ui_cpu_cycle_stage,
                 setup_available_programs,
             )
                 .chain(),
         );
 
-        app.add_systems(Update, (update_cpu_cycle_stage, available_programs));
+        app.add_systems(
+            Update,
+            (
+                update_cpu_cycle_stage,
+                available_programs,
+                update_registers,
+                update_register_parsed,
+            ),
+        );
     }
 }
