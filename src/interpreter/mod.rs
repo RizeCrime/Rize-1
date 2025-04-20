@@ -95,6 +95,16 @@ impl Plugin for RizeOneInterpreter {
     }
 }
 
+pub fn update_program_counter(
+    r_program: Res<ActiveProgram>,
+    mut r_registers: ResMut<Registers>,
+) {
+    let pc: &mut Register = r_registers.get("pc").unwrap();
+    let value: usize = r_program.line;
+
+    pc.store_immediate(value).unwrap();
+}
+
 pub fn check_azm_programs(
     mut r_programs: ResMut<AzmPrograms>,
     time: Res<Time>,
@@ -184,6 +194,7 @@ pub fn tick_cpu(
 pub fn fetch(
     mut r_active_program: ResMut<ActiveProgram>,
     mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
+    mut r_registers: ResMut<Registers>,
 ) {
     let mut program = r_active_program.as_mut();
 
@@ -396,7 +407,88 @@ pub fn execute(
                 })
             } else {
                 program.line = target_line;
-                Ok(())
+                // Also update PC register
+                write_register_u16(registers, "pc", target_line as u16)
+            }
+        }
+        OpCode::JIZ => {
+            // Read flag, handling Result
+            match read_register_u16(registers, "fz") {
+                Ok(zero_flag) => {
+                    if zero_flag == 1 {
+                        // Jump logic
+                        let target_symbol = program
+                            .arg1
+                            .raw
+                            .strip_prefix('.')
+                            .unwrap_or_default();
+                        let target_line = program
+                            .symbols
+                            .get(target_symbol)
+                            .copied()
+                            .unwrap_or_default();
+                        if target_line == 0 {
+                            Err(RizeError {
+                                type_: RizeErrorType::Execute,
+                                message: format!(
+                                    "JIZ target symbol '.{}' not found.",
+                                    target_symbol
+                                ),
+                            })
+                        } else {
+                            program.line = target_line;
+                            write_register_u16(
+                                registers,
+                                "pc",
+                                target_line as u16,
+                            )
+                        }
+                    } else {
+                        // Flag is zero, don't jump
+                        Ok(())
+                    }
+                }
+                Err(e) => Err(e), // Propagate flag read error
+            }
+        }
+        OpCode::JIN => {
+            // Read flag, handling Result
+            match read_register_u16(registers, "fn") {
+                Ok(negative_flag) => {
+                    if negative_flag == 1 {
+                        // Jump logic
+                        let target_symbol = program
+                            .arg1
+                            .raw
+                            .strip_prefix('.')
+                            .unwrap_or_default();
+                        let target_line = program
+                            .symbols
+                            .get(target_symbol)
+                            .copied()
+                            .unwrap_or_default();
+                        if target_line == 0 {
+                            Err(RizeError {
+                                type_: RizeErrorType::Execute,
+                                message: format!(
+                                    "JIN target symbol '.{}' not found.",
+                                    target_symbol
+                                ),
+                            })
+                        } else {
+                            program.line = target_line;
+                            write_register_u16(
+                                registers,
+                                "pc",
+                                target_line as u16,
+                            )
+                        }
+                    } else {
+                        // Flag is zero, don't jump
+                        Ok(())
+                    }
+                }
+                Err(e) => Err(e), // Propagate flag read error
             }
         }
         _ => {
