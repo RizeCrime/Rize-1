@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -5,9 +6,13 @@ use std::str::{FromStr, Lines};
 
 use bevy::prelude::*;
 use bevy_inspector_egui::prelude::*;
+use display::RizeOneDisplay;
 
 use super::*;
 use crate::*;
+
+mod display;
+pub use display::*;
 
 #[derive(Resource, Default, Reflect, InspectorOptions)]
 #[reflect(Resource, InspectorOptions)]
@@ -20,6 +25,7 @@ pub struct ActiveProgram {
     pub file_stem: String,
     pub contents: String,
     pub line: usize,
+    pub symbols: HashMap<String, usize>,
     pub raw_opcode: String,
     pub opcode: OpCode,
     pub arg1: ProgramArg,
@@ -45,6 +51,7 @@ pub enum ArgType {
     Register(String),
     MemAddr(u16),
     Immediate(u16),
+    Symbol(String),
 }
 
 #[derive(Resource)]
@@ -61,13 +68,13 @@ impl Plugin for RizeOneInterpreter {
             TimerMode::Repeating,
         )));
 
-        app.add_event::<CpuHaltedEvent>();
-
         app.register_type::<AzmPrograms>();
         app.register_type::<ActiveProgram>();
 
         #[cfg(debug_assertions)]
         app.add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default());
+
+        app.add_plugins(RizeOneDisplay);
 
         app.add_systems(Update, check_azm_programs);
 
@@ -147,7 +154,10 @@ pub fn fetch(mut r_active_program: ResMut<ActiveProgram>) {
             let trimmed_line = line_str.trim();
 
             // Check if the line is empty or a comment
-            if trimmed_line.is_empty() || trimmed_line.starts_with('#') {
+            if trimmed_line.is_empty()
+                || trimmed_line.starts_with('#')
+                || trimmed_line.starts_with('.')
+            {
                 program.line += 1; // Increment line counter for the skipped line
                 continue; // Try the next line
             }
@@ -183,6 +193,28 @@ pub fn fetch(mut r_active_program: ResMut<ActiveProgram>) {
             todo!("Set CPU State as Halted.");
         }
     }
+
+    program.symbols = program
+        .contents
+        .lines()
+        .enumerate()
+        .filter_map(|(n, line)| {
+            let trimmed_line = line.trim();
+            if trimmed_line.starts_with('.') {
+                let symbol_name = &trimmed_line[1..];
+                if symbol_name.len() > 0
+                    && symbol_name.len() <= 16
+                    && symbol_name.chars().all(char::is_alphabetic)
+                {
+                    Some((symbol_name.to_string(), n + 1))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
 }
 
 // 1) validate opcode via enum from String
@@ -201,7 +233,9 @@ pub fn execute(
     mut r_active_program: ResMut<ActiveProgram>,
     r_registers: Res<Registers>,
     mut r_memory: ResMut<Memory>,
-    mut ew_cpu_halt: EventWriter<CpuHaltedEvent>,
+    mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
+    mut r_display_memory: ResMut<DisplayMemory>,
+    r_images: Res<Assets<Image>>,
 ) {
     let program = r_active_program.as_mut();
     let registers = r_registers.as_ref();
@@ -280,22 +314,39 @@ pub fn execute(
                 registers,
             )
         }
-        OpCode::NOT => {
-            not(program.arg1.parsed.clone(), registers)
+        OpCode::NOT => not(program.arg1.parsed.clone(), registers),
+        OpCode::SHL => shl(
+            program.arg1.parsed.clone(),
+            program.arg2.parsed.clone(),
+            registers,
+        ),
+        OpCode::SHR => shr(
+            program.arg1.parsed.clone(),
+            program.arg2.parsed.clone(),
+            registers,
+        ),
+        OpCode::HALT => {
+            info!("Halting CPU!");
+            next_cpu_stage.set(CpuCycleStage::Halt);
+            Ok(())
         }
-        OpCode::SHL => {
-            shl(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                registers,
-            )
-        }
-        OpCode::SHR => {
-            shr(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                registers,
-            )
+        OpCode::WDM => wdm(
+            program.arg1.parsed.clone(),
+            program.arg2.parsed.clone(),
+            program.arg3.parsed.clone(),
+            r_display_memory,
+            registers,
+        ),
+        OpCode::JMP => {
+            let target_symbol =
+                program.arg1.raw.strip_prefix('.').unwrap_or_default();
+            let target_line = program
+                .symbols
+                .get(target_symbol)
+                .copied()
+                .unwrap_or_default();
+            program.line = target_line;
+            Ok(())
         }
         _ => {
             warn!("OpCode {:?} not yet implemented!", program.opcode);
@@ -332,17 +383,14 @@ pub fn execute(
 /// 1) if only characters       -> Register
 /// 2) if starts with '0x'      -> MemAddr
 /// 3) if is entirely digits    -> Immediate
+/// 4) if starts with '.'       -> Symbol
 fn parse_arg(arg: &str) -> ArgType {
     if arg.is_empty() {
         return ArgType::None;
     }
 
     // Rule 1: Register
-    // Assuming registers are only letters, and don't conflict
-    // with the '0x' prefix or being purely numeric.
     if arg.chars().all(|c| c.is_alphabetic()) {
-        // A simple check: is it non-empty?
-        // You might need a more specific check depending on valid register names.
         return ArgType::Register(arg.to_string());
     }
 
@@ -351,8 +399,6 @@ fn parse_arg(arg: &str) -> ArgType {
         if let Ok(addr) = u16::from_str_radix(hex_val, 16) {
             return ArgType::MemAddr(addr);
         }
-        // If it starts with '0x' but doesn't parse as u16, treat as None
-        // or perhaps introduce an error type if needed.
         return ArgType::Error;
     }
 
@@ -361,8 +407,19 @@ fn parse_arg(arg: &str) -> ArgType {
         return ArgType::Immediate(imm);
     }
 
-    // Default: None
-    ArgType::None
+    // Rule 4: Symbol
+    if let Some(symbol_name) = arg.strip_prefix('.') {
+        if !symbol_name.is_empty()
+            && symbol_name.chars().all(char::is_alphabetic)
+        {
+            return ArgType::Symbol(symbol_name.to_string());
+        }
+        // If it starts with '.' but isn't a valid symbol format
+        return ArgType::Error;
+    }
+
+    // Default/Error if none of the above match
+    ArgType::Error
 }
 
 fn mov(
@@ -783,16 +840,14 @@ fn xor(
     }
 }
 
-fn not(
-    arg1: ArgType, 
-    registers: &Registers
-) -> Result<(), RizeError> {
+fn not(arg1: ArgType, registers: &Registers) -> Result<(), RizeError> {
     match arg1 {
         ArgType::Register(reg_name) => {
-            let register = registers.get(&reg_name).ok_or_else(|| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Register '{}' not found!", reg_name),
-            })?;
+            let register =
+                registers.get(&reg_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!("Register '{}' not found!", reg_name),
+                })?;
 
             let v1 = register.read_u16().map_err(|e| RizeError {
                 type_: RizeErrorType::Execute,
@@ -814,7 +869,7 @@ fn not(
 fn shl(
     arg1: ArgType, // Target Register
     arg2: ArgType, // Amount Immediate (Optional, defaults to 1)
-    registers: &Registers
+    registers: &Registers,
 ) -> Result<(), RizeError> {
     match (arg1, arg2) { 
         // Case 1: Shift amount is provided as Immediate
@@ -863,9 +918,9 @@ fn shl(
 fn shr(
     arg1: ArgType, // Target Register
     arg2: ArgType, // Amount Immediate (Optional, defaults to 1)
-    registers: &Registers
+    registers: &Registers,
 ) -> Result<(), RizeError> {
-     match (arg1, arg2) { 
+    match (arg1, arg2) { 
         // Case 1: Shift amount is provided as Immediate
         (ArgType::Register(target_reg_name), ArgType::Immediate(amount)) => {
             let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
@@ -907,4 +962,115 @@ fn shr(
                 .to_string(),
         }),
     }
+}
+
+/// ### Dev Metadata
+/// #### Expected Argument Layout
+/// arg1:
+///     - upper 8 bits  ->  Red
+///     - lower 8 bits  ->  Green
+/// arg2:
+///     - upper 8 bits  ->  Blue
+///     - lower 8 bits  ->  Alpha
+/// arg3:
+///     - upper 8 bits  ->  X
+///     - lower 8 bits  ->  Y
+fn wdm(
+    arg1: ArgType,
+    arg2: ArgType,
+    arg3: ArgType,
+    mut r_display_memory: ResMut<DisplayMemory>,
+    registers: &Registers,
+) -> Result<(), RizeError> {
+    let val1 = match arg1 {
+        ArgType::Immediate(v) => v,
+        ArgType::Register(reg_name) => {
+            let register =
+                registers.get(&reg_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!(
+                        "Register '{}' not found for WDM arg1!",
+                        reg_name
+                    ),
+                })?;
+            register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {} for WDM arg1: {}",
+                    reg_name, e
+                ),
+            })?
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: "WDM arg1 must be Immediate or Register".to_string(),
+            })
+        }
+    };
+    let val2 = match arg2 {
+        ArgType::Immediate(v) => v,
+        ArgType::Register(reg_name) => {
+            let register =
+                registers.get(&reg_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!(
+                        "Register '{}' not found for WDM arg2!",
+                        reg_name
+                    ),
+                })?;
+            register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {} for WDM arg2: {}",
+                    reg_name, e
+                ),
+            })?
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: "WDM arg2 must be Immediate or Register".to_string(),
+            })
+        }
+    };
+    let val3 = match arg3 {
+        ArgType::Immediate(v) => v,
+        ArgType::Register(reg_name) => {
+            let register =
+                registers.get(&reg_name).ok_or_else(|| RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!(
+                        "Register '{}' not found for WDM arg3!",
+                        reg_name
+                    ),
+                })?;
+            register.read_u16().map_err(|e| RizeError {
+                type_: RizeErrorType::Execute,
+                message: format!(
+                    "Failed to read register {} for WDM arg3: {}",
+                    reg_name, e
+                ),
+            })?
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: "WDM arg3 must be Immediate or Register".to_string(),
+            })
+        }
+    };
+
+    let red = (val1 >> 8) as u8;
+    let green = (val1 & 0xFF) as u8;
+
+    let blue = (val2 >> 8) as u8;
+    let alpha = (val2 & 0xFF) as u8;
+
+    let x = (val3 >> 8) as u8;
+    let y = (val3 & 0xFF) as u8;
+
+    let color = [red, green, blue, alpha];
+
+    r_display_memory.set_pixel(x, y, color)
 }
