@@ -453,11 +453,11 @@ pub fn setup_display(
     mut r_images: ResMut<Assets<Image>>,
 ) {
     let image_size = bevy::render::render_resource::Extent3d {
-        width: 256,
-        height: 256,
+        width: DISPLAY_WIDTH as u32,
+        height: DISPLAY_HEIGHT as u32,
         depth_or_array_layers: 1,
     };
-    let data_size = (256 * 256 * 4) as usize;
+    let data_size = (DISPLAY_WIDTH * DISPLAY_HEIGHT * 4) as usize;
     let mut image_data = vec![0u8; data_size];
 
     for i in (3..data_size).step_by(4) {
@@ -487,7 +487,7 @@ pub fn setup_display(
                 ..Default::default()
             },
             Transform::from_xyz(0.0, 0.0, 0.0)
-                .with_scale(Vec3::new(2.0, 2.0, 1.0)),
+                .with_scale(Vec3::new(16.0, 16.0, 1.0)),
             Name::new("ui-display"),
         ))
         .id();
@@ -743,17 +743,9 @@ pub fn update_display(
     mut r_pixel_display: ResMut<PixelDisplay>,
     mut r_images: ResMut<Assets<Image>>,
 ) {
-    // for x in 0..256 {
-    //     for y in 0..256 {
-    //         let color = [x as u8, 0 as u8, y as u8, 255 as u8];
-    //         r_pixel_display
-    //             .set_pixel(x, y, color, &mut r_images)
-    //             .unwrap();
-    //     }
-    // }
-    for x in 0..256 {
-        for y in 0..256 {
-            let target_color = r_display.get_pixel(x, y).unwrap();
+    for x in 0..DISPLAY_WIDTH {
+        for y in 0..DISPLAY_HEIGHT {
+            let target_color = r_display.get_pixel(x as u16, y as u16).unwrap();
 
             r_pixel_display
                 .set_pixel(x as usize, y as usize, target_color, &mut r_images)
@@ -766,21 +758,17 @@ pub fn update_display(
 /// Helper Functions ///
 /// ---------------- ///
 
-/// Converts a slice of i8 (representing bits, 0 or 1) into a u16.
-/// Assumes MSB first ordering within the slice.
 fn bits_to_u16(bits: &[i8]) -> u16 {
     let mut value: u16 = 0;
     for &bit in bits {
-        value <<= 1; // Shift existing bits left
+        value <<= 1;
         if bit == 1 {
-            value |= 1; // Set the least significant bit if the current bit is 1
+            value |= 1;
         }
-        // If bit is 0, no change needed after the shift
     }
     value
 }
 
-// Helper struct for building Node components using the builder pattern
 struct NodeBuilder {
     node: Node,
 }

@@ -18,14 +18,14 @@ impl Plugin for RizeOneDisplay {
 /// which each have u8 Values for RGBA
 #[derive(Resource, Reflect)]
 pub struct DisplayMemory {
-    pixels: [[[u8; 4]; 256]; 256],
+    pixels: [[[u8; 4]; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
 }
 
 impl DisplayMemory {
     pub fn init() -> Self {
-        let mut pixels = [[[0; 4]; 256]; 256];
-        for x in 0..256 {
-            for y in 0..256 {
+        let mut pixels = [[[0; 4]; DISPLAY_WIDTH]; DISPLAY_HEIGHT];
+        for x in 0..DISPLAY_WIDTH {
+            for y in 0..DISPLAY_HEIGHT {
                 pixels[x][y] = [x as u8, 0u8, y as u8, 255u8];
             }
         }

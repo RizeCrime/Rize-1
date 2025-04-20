@@ -55,7 +55,7 @@ impl PixelDisplay {
         color: [u8; 4],
         mut r_images: &mut ResMut<Assets<Image>>,
     ) -> Result<(), RizeError> {
-        if x > 255 || y > 255 {
+        if x > DISPLAY_WIDTH - 1 || y > DISPLAY_HEIGHT - 1 {
             return Err(RizeError {
                 type_: RizeErrorType::Display,
                 message: format!("Coordinates ({}, {}) out of bounds", x, y),
@@ -65,7 +65,7 @@ impl PixelDisplay {
         let image: &mut Image = r_images.get_mut(&self.h_image).unwrap();
         let image_data: &mut [u8] = image.data.as_mut_slice();
 
-        let index = ((y * 256 + x) * 4) as usize;
+        let index = ((y * DISPLAY_WIDTH + x) * 4) as usize;
         if index + 4 <= image_data.len() {
             image_data[index..index + 4].copy_from_slice(&color);
         } else {
