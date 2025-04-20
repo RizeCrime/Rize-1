@@ -5,6 +5,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::{interpreter::ArgType, *};
 
+#[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CpuHaltedEvent;
+
 #[derive(Resource, Reflect, Default)]
 pub struct Register {
     #[reflect(ignore)]
@@ -104,6 +107,10 @@ impl RegisterTrait for Register {
             ArgType::Immediate(imm) => {
                 self.store_immediate(imm as u16 as usize)
             }
+            ArgType::Symbol(sym) => {
+                error!("no don't do that :(");
+                Ok(())
+            }
             ArgType::None => Err(RizeError {
                 type_: RizeErrorType::Execute,
                 message:
@@ -111,7 +118,8 @@ impl RegisterTrait for Register {
                         .to_string(),
             }),
             ArgType::Error => {
-                todo!()
+                error!("no don't do that :(");
+                Ok(())
             }
         }
     }
@@ -241,11 +249,14 @@ pub enum OpCode {
     AND,
     OR,
     XOR,
+    SHL,
+    SHR,
     HALT,
     NOP,
     JMP,
     JIZ,
     JIN,
+    WDM,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -263,9 +274,12 @@ impl std::str::FromStr for OpCode {
             "ADD" => Ok(OpCode::ADD),
             "SUB" => Ok(OpCode::SUB),
             "NOT" => Ok(OpCode::NOT),
+            "WDM" => Ok(OpCode::WDM),
             "AND" => Ok(OpCode::AND),
             "OR" => Ok(OpCode::OR),
             "XOR" => Ok(OpCode::XOR),
+            "SHL" => Ok(OpCode::SHL),
+            "SHR" => Ok(OpCode::SHR),
             "HALT" => Ok(OpCode::HALT),
             "NOP" => Ok(OpCode::NOP),
             "JMP" => Ok(OpCode::JMP),
@@ -285,6 +299,7 @@ pub enum RizeErrorType {
     MemoryRead,
     RegisterRead,
     RegisterWrite,
+    Display,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
