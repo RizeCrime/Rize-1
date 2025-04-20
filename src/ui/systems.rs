@@ -506,6 +506,25 @@ pub fn update_cpu_cycle_stage(
     >,
     mut q_stage_text: Query<(&mut Text, &Name), With<UiElement>>,
 ) {
+    if let Some((mut stage_text, _)) = q_stage_text
+        .iter_mut()
+        .find(|(_, name)| name.as_str() == "ui-cpu-cycle-stage-value")
+    {
+        let current_stage_value: &CpuCycleStage = s_current_stage.get();
+        let stage_name = match current_stage_value {
+            CpuCycleStage::Startup => "Startup",
+            CpuCycleStage::Fetch => "Fetch",
+            CpuCycleStage::Decode => "Decode",
+            CpuCycleStage::Execute => "Execute",
+            CpuCycleStage::Halt => "Halted",
+        };
+        if stage_text.0 != stage_name {
+            stage_text.0 = stage_name.into();
+        }
+    } else {
+        warn!("Failed to find ui-cpu-cycle-stage-value text element.");
+    }
+
     q_advance_button
         .iter()
         .for_each(|(interaction, button_name)| {
@@ -516,34 +535,22 @@ pub fn update_cpu_cycle_stage(
                 return;
             }
 
-            let mut stage_text = q_stage_text
-                .iter_mut()
-                .find(|(_, name)| name.as_str() == "ui-cpu-cycle-stage-value")
-                .map(|(text, _)| text)
-                .expect("Failed to find ui-cpu-cycle-stage-value");
-
-            let mut current_stage: &CpuCycleStage = s_current_stage.get();
+            let current_stage: &CpuCycleStage = s_current_stage.get();
             match current_stage {
                 CpuCycleStage::Startup => {
                     s_next_stage.set(CpuCycleStage::Fetch);
-                    stage_text.0 = "Fetch".into();
                 }
                 CpuCycleStage::Fetch => {
                     s_next_stage.set(CpuCycleStage::Decode);
-                    stage_text.0 = "Decode".into();
                 }
                 CpuCycleStage::Decode => {
                     s_next_stage.set(CpuCycleStage::Execute);
-                    stage_text.0 = "Execute".into();
                 }
                 CpuCycleStage::Execute => {
                     s_next_stage.set(CpuCycleStage::Fetch);
-                    stage_text.0 = "Fetch".into();
                 }
-                _ => {
-                    panic!(
-                        "You shouldn't be here, and I should be doing better Error handling #2: Electric Boogaloo!"
-                    );
+                CpuCycleStage::Halt => {
+                    s_next_stage.set(CpuCycleStage::Startup);
                 }
             }
         });
