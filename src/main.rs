@@ -23,6 +23,11 @@ use bevy_inspector_egui::quick::{
 };
 #[cfg(feature = "inspector")]
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+#[cfg(feature = "inspector")]
+use bevy_screen_diagnostics::{
+    ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin,
+    ScreenFrameDiagnosticsPlugin,
+};
 
 mod constants;
 pub use constants::*;
@@ -66,7 +71,14 @@ fn main() {
     bevy_app.add_plugins((
         DefaultInspectorConfigPlugin,
         WorldInspectorPlugin::new(),
-        ResourceInspectorPlugin::<types::Registers>::default(),
+        // ResourceInspectorPlugin::<types::Registers>::default(),
+    ));
+
+    #[cfg(debug_assertions)]
+    bevy_app.add_plugins((
+        ScreenDiagnosticsPlugin::default(),
+        ScreenFrameDiagnosticsPlugin,
+        ScreenEntityDiagnosticsPlugin,
     ));
 
     bevy_app.add_plugins(RizeOne);

@@ -158,9 +158,13 @@ _Control Flow OPCODE Descriptions:_
 | JIN    | Jumps to ARG1, if Sign Flag (Negative Flag) is True. |
 |        |                                                      |
 
+**Special OPCODES**
 
+| OPCODE | ARG1    | ARG2    | ARG3    |
+| ------ | ------- | ------- | ------- |
+| WDM    | 8:R,8:G | 8:B,8:A | 8:x,8:y | 
 
-
+WDM -> Write Display Memory
 
 
 
