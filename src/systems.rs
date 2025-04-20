@@ -10,23 +10,17 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
     info!("Setting up Basic Registers...");
 
     let instruction_register = Register::init(INSTRUCTION_WIDTH);
-
     let program_counter = Register::init(CPU_BITTAGE);
-
     let memory_address_register = Register::init(CPU_BITTAGE);
-
     let memory_data_register = Register::init(CPU_BITTAGE);
 
     r_registers
         .as_mut()
         .insert("ir".into(), instruction_register);
-
     r_registers.as_mut().insert("pc".into(), program_counter);
-
     r_registers
         .as_mut()
         .insert("mar".into(), memory_address_register);
-
     r_registers
         .as_mut()
         .insert("mdr".into(), memory_data_register);
@@ -36,33 +30,23 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
     info!("Setting up Flags...");
 
     let zero_flag = Register::init(1);
-
     let carry_flag = Register::init(1);
-
     let overflow_flag = Register::init(1);
-
     let negative_flag = Register::init(1);
 
     r_registers.as_mut().insert("zf".into(), zero_flag);
-
     r_registers.as_mut().insert("cf".into(), carry_flag);
-
     r_registers.as_mut().insert("of".into(), overflow_flag);
-
     r_registers.as_mut().insert("nf".into(), negative_flag);
 
     info!("Finished setting up Flags.");
-
     info!("Setting up General Purpose Registers...");
 
     for i in 0..N_GENERAL_PURPOSE_REGISTERS {
         // Convert index to letter (0->a, 1->b, etc)
         let letter = (b'a' + i as u8) as char;
-
-        let reg_name = format!("g{}a", letter);
-
+        let reg_name = format!("g{}", letter);
         let gpr = Register::init(CPU_BITTAGE);
-
         r_registers.as_mut().insert(reg_name, gpr);
     }
 

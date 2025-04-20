@@ -8,31 +8,38 @@ use crate::{interpreter::ArgType, *};
 #[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CpuHaltedEvent;
 
-#[derive(Resource, Reflect, Default)]
+#[derive(Resource, Reflect, Default, Debug)]
 pub struct Register {
     #[reflect(ignore)]
     bits: Arc<Mutex<Vec<i8>>>,
+    pub section: char, // Added section field
 }
 
 impl Register {
     pub fn init(length: usize) -> Self {
         Self {
             bits: Arc::new(Mutex::new(vec![0i8; length])),
+            section: 'a', // Default to full width
         }
     }
 }
 
 pub trait RegisterTrait {
     fn read(&self) -> Result<Vec<i8>, &'static str>;
+    fn read_lower_half(&self) -> Result<Vec<i8>, &'static str>;
+    fn read_lower_quarter(&self) -> Result<Vec<i8>, &'static str>;
+    fn read_lower_eigth(&self) -> Result<Vec<i8>, &'static str>;
+
     fn read_u16(&self) -> Result<u16, &'static str>;
     fn read_ascii(&self) -> Result<String, &'static str>;
     fn read_hex(&self) -> Result<String, &'static str>;
 
     #[doc(hidden)]
     fn store_immediate(&self, value: usize) -> Result<(), RizeError>;
-    fn store_memaddr() -> Result<(), &'static str>;
 
-    fn store(&self, value: ArgType) -> Result<(), RizeError>;
+    fn write_lower_half(&self, value: Vec<i8>) -> Result<(), RizeError>;
+    fn write_lower_quarter(&self, value: Vec<i8>) -> Result<(), RizeError>;
+    fn write_lower_eigth(&self, value: Vec<i8>) -> Result<(), RizeError>;
 }
 
 impl RegisterTrait for Register {
@@ -42,6 +49,18 @@ impl RegisterTrait for Register {
             .lock()
             .map_err(|_| "Failed to acquire lock for reading")?;
         Ok(bits.clone())
+    }
+    fn read_lower_half(&self) -> Result<Vec<i8>, &'static str> {
+        let bits = self.read()?;
+        Ok(bits[CPU_BITTAGE / 2..].to_vec())
+    }
+    fn read_lower_quarter(&self) -> Result<Vec<i8>, &'static str> {
+        let bits = self.read()?;
+        Ok(bits[CPU_BITTAGE * 3 / 4..].to_vec())
+    }
+    fn read_lower_eigth(&self) -> Result<Vec<i8>, &'static str> {
+        let bits = self.read()?;
+        Ok(bits[CPU_BITTAGE * 7 / 8..].to_vec())
     }
 
     fn read_u16(&self) -> Result<u16, &'static str> {
@@ -89,39 +108,65 @@ impl RegisterTrait for Register {
         Ok(())
     }
 
-    fn store_memaddr() -> Result<(), &'static str> {
-        todo!()
+    fn write_lower_half(&self, value: Vec<i8>) -> Result<(), RizeError> {
+        let mut bits = self.bits.lock().map_err(|_| RizeError {
+            type_: RizeErrorType::RegisterWrite,
+            message: "Failed to acquire lock for write_lower_half".to_string(),
+        })?;
+        if value.len() != CPU_BITTAGE / 2 {
+            return Err(RizeError {
+                type_: RizeErrorType::RegisterWrite,
+                message: format!(
+                    "Invalid length for write_lower_half: expected {}, got {}",
+                    CPU_BITTAGE / 2,
+                    value.len()
+                ),
+            });
+        }
+        let start_index = CPU_BITTAGE / 2;
+        bits[start_index..].copy_from_slice(&value);
+        Ok(())
     }
 
-    fn store(&self, value: ArgType) -> Result<(), RizeError> {
-        match value {
-            ArgType::Register(reg_name) => Err(RizeError {
-                type_: RizeErrorType::Execute,
-                message:
-                    "Storing Type 'Register' in Type 'Register' is not allowed!"
-                        .to_string(),
-            }),
-            ArgType::MemAddr(addr) => {
-                todo!()
-            }
-            ArgType::Immediate(imm) => {
-                self.store_immediate(imm as u16 as usize)
-            }
-            ArgType::Symbol(sym) => {
-                error!("no don't do that :(");
-                Ok(())
-            }
-            ArgType::None => Err(RizeError {
-                type_: RizeErrorType::Execute,
-                message:
-                    "Storing Type 'None' in Type 'Register' is not allowed!"
-                        .to_string(),
-            }),
-            ArgType::Error => {
-                error!("no don't do that :(");
-                Ok(())
-            }
+    fn write_lower_quarter(&self, value: Vec<i8>) -> Result<(), RizeError> {
+        let mut bits = self.bits.lock().map_err(|_| RizeError {
+            type_: RizeErrorType::RegisterWrite,
+            message: "Failed to acquire lock for write_lower_quarter"
+                .to_string(),
+        })?;
+        if value.len() != CPU_BITTAGE / 4 {
+            return Err(RizeError {
+                type_: RizeErrorType::RegisterWrite,
+                message: format!(
+                    "Invalid length for write_lower_quarter: expected {}, got {}",
+                    CPU_BITTAGE / 4,
+                    value.len()
+                ),
+            });
         }
+        let start_index = CPU_BITTAGE * 3 / 4;
+        bits[start_index..].copy_from_slice(&value);
+        Ok(())
+    }
+
+    fn write_lower_eigth(&self, value: Vec<i8>) -> Result<(), RizeError> {
+        let mut bits = self.bits.lock().map_err(|_| RizeError {
+            type_: RizeErrorType::RegisterWrite,
+            message: "Failed to acquire lock for write_lower_eigth".to_string(),
+        })?;
+        if value.len() != CPU_BITTAGE / 8 {
+            return Err(RizeError {
+                type_: RizeErrorType::RegisterWrite,
+                message: format!(
+                    "Invalid length for write_lower_eigth: expected {}, got {}",
+                    CPU_BITTAGE / 8,
+                    value.len()
+                ),
+            });
+        }
+        let start_index = CPU_BITTAGE * 7 / 8;
+        bits[start_index..].copy_from_slice(&value);
+        Ok(())
     }
 }
 
@@ -148,12 +193,49 @@ impl Registers {
     ///     - 'b' -> lower half of 'a'
     ///     - 'c' -> lower half of 'b'
     ///     - 'd' -> lower half of 'c'
-    pub fn get(&self, name: &str) -> Option<&Register> {
-        info!("Getting Register by Name... ");
-        info!("Searching for: '{name}'");
-        info!("Available Registers: {:?}", self.all.keys());
+    /// Finds the base register, sets its section field, and returns a mutable reference.
+    pub fn get(&mut self, original_name: &str) -> Option<&mut Register> {
+        let mut lookup_name = original_name.to_string();
+        let mut section = 'a'; // Default section
 
-        self.all.get(name.to_ascii_lowercase().as_str())
+        if let Some(first) = original_name.chars().nth(0) {
+            // Make first character check case-insensitive
+            if first.to_ascii_lowercase() == 'g' && original_name.len() >= 3 {
+                if let Some(third) = original_name.chars().nth(2) {
+                    let third_lower = third.to_ascii_lowercase();
+                    // Make section check case-insensitive
+                    if ['a', 'b', 'c', 'd'].contains(&third_lower) {
+                        section = third_lower; // Store lowercase section
+                        lookup_name.remove(2);
+                    } // else: invalid section char, defaults to 'a'
+                }
+            } // else: not a 'g' register or too short, defaults to 'a'
+        }
+
+        info!(
+            "Get request: original='{}', base_lookup='{}', section='{}'",
+            original_name, lookup_name, section
+        );
+
+        let lookup_key = lookup_name.to_ascii_lowercase();
+        info!("Searching map with key: '{}'", lookup_key);
+
+        // Check for key existence before mutable borrow
+        if self.all.contains_key(&lookup_key) {
+            // Key exists, so get_mut is safe and returns Some.
+            // We can unwrap directly here, although get_mut is still safer.
+            let base_register = self.all.get_mut(&lookup_key).unwrap(); // Or use get_mut again if paranoid
+            base_register.section = section;
+            Some(base_register)
+        } else {
+            // Key doesn't exist, log immutably.
+            warn!(
+                "Register key '{}' not found in map. Available keys: {:?}",
+                lookup_key,
+                self.all.keys() // Immutable borrow here
+            );
+            None
+        }
     }
 
     pub fn all(&self) -> &HashMap<String, Register> {

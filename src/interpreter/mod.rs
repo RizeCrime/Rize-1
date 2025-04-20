@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::str::{FromStr, Lines};
 
 use bevy::prelude::*;
+use bevy::tasks::futures_lite::stream::Pending;
 use bevy_inspector_egui::prelude::*;
 use display::RizeOneDisplay;
 
@@ -21,6 +22,7 @@ pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
 #[derive(Resource, Default, Reflect, InspectorOptions)]
 #[reflect(Resource, InspectorOptions)]
 pub struct ActiveProgram {
+    pub auto_step: bool,
     pub path: PathBuf,
     pub file_stem: String,
     pub contents: String,
@@ -78,9 +80,18 @@ impl Plugin for RizeOneInterpreter {
 
         app.add_systems(Update, check_azm_programs);
 
-        app.add_systems(OnEnter(CpuCycleStage::Fetch), fetch);
-        app.add_systems(OnEnter(CpuCycleStage::Decode), decode);
-        app.add_systems(OnEnter(CpuCycleStage::Execute), execute);
+        app.add_systems(
+            OnEnter(CpuCycleStage::Fetch),
+            (tick_cpu, fetch).chain(),
+        );
+        app.add_systems(
+            OnEnter(CpuCycleStage::Decode),
+            (tick_cpu, decode).chain(),
+        );
+        app.add_systems(
+            OnEnter(CpuCycleStage::Execute),
+            (tick_cpu, execute).chain(),
+        );
     }
 }
 
@@ -94,7 +105,7 @@ pub fn check_azm_programs(
     }
 
     let azzembly_dir = AZZEMBLY_DIR;
-    debug!("Checking for .azm programs in {}", azzembly_dir);
+    // debug!("Checking for .azm programs in {}", azzembly_dir);
 
     let entries = match fs::read_dir(azzembly_dir) {
         Ok(entries) => entries,
@@ -139,11 +150,41 @@ pub fn check_azm_programs(
     }
 }
 
+pub fn tick_cpu(
+    s_current_stage: Res<State<CpuCycleStage>>,
+    mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
+    mut r_program: ResMut<ActiveProgram>,
+) {
+    if !r_program.auto_step {
+        return;
+    }
+
+    match s_current_stage.get() {
+        CpuCycleStage::Fetch => {
+            s_next_stage.set(CpuCycleStage::Decode);
+        }
+        CpuCycleStage::Decode => {
+            s_next_stage.set(CpuCycleStage::Execute);
+        }
+        CpuCycleStage::Execute => {
+            s_next_stage.set(CpuCycleStage::Fetch);
+        }
+        CpuCycleStage::Halt => {
+            s_next_stage.set(CpuCycleStage::Halt);
+            r_program.auto_step = false;
+        }
+        _ => {}
+    }
+}
+
 /// -------------- ///
 /// Update Systems ///
 /// -------------- ///
 
-pub fn fetch(mut r_active_program: ResMut<ActiveProgram>) {
+pub fn fetch(
+    mut r_active_program: ResMut<ActiveProgram>,
+    mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
+) {
     let mut program = r_active_program.as_mut();
 
     // Create an iterator starting from the current line
@@ -179,18 +220,20 @@ pub fn fetch(mut r_active_program: ResMut<ActiveProgram>) {
                 parsed: ArgType::None,
             };
 
-            program.line += 1; // Increment line counter for the processed line
-            break; // Instruction fetched, exit loop
+            program.line += 1;
+            break;
         } else {
-            // Reached end of file while searching for a non-empty/non-comment line
-            program.raw_opcode = String::new(); // Indicate end or issue
+            info!("End of program reached. Halting CPU.");
+            next_cpu_stage.set(CpuCycleStage::Halt);
+
+            program.raw_opcode = String::new(); // Clear fields
+            program.opcode = OpCode::None;
             program.arg1 = ProgramArg::default();
             program.arg2 = ProgramArg::default();
             program.arg3 = ProgramArg::default();
+
             // program.line remains at the position *after* the last line
             break;
-
-            todo!("Set CPU State as Halted.");
         }
     }
 
@@ -231,21 +274,22 @@ pub fn decode(mut r_active_program: ResMut<ActiveProgram>) {
 
 pub fn execute(
     mut r_active_program: ResMut<ActiveProgram>,
-    r_registers: Res<Registers>,
+    mut r_registers: ResMut<Registers>,
     mut r_memory: ResMut<Memory>,
     mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
     mut r_display_memory: ResMut<DisplayMemory>,
     r_images: Res<Assets<Image>>,
 ) {
     let program = r_active_program.as_mut();
-    let registers = r_registers.as_ref();
+    let registers = r_registers.as_mut();
     let memory = r_memory.as_mut();
 
     let execution_result = match program.opcode {
         OpCode::MOV => mov(
-            program.arg1.parsed.clone(),
-            program.arg2.parsed.clone(),
+            &program.arg1.parsed,
+            &program.arg2.parsed,
             registers,
+            memory,
         ),
         OpCode::ADD => {
             let arg3_option = if program.arg3.raw.is_empty() {
@@ -254,9 +298,9 @@ pub fn execute(
                 Some(program.arg3.parsed.clone())
             };
             add(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                arg3_option,
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
                 registers,
             )
         }
@@ -267,9 +311,9 @@ pub fn execute(
                 Some(program.arg3.parsed.clone())
             };
             sub(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                arg3_option,
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
                 registers,
             )
         }
@@ -282,9 +326,9 @@ pub fn execute(
                 Some(program.arg3.parsed.clone())
             };
             and(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                arg3_option,
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
                 registers,
             )
         }
@@ -295,9 +339,9 @@ pub fn execute(
                 Some(program.arg3.parsed.clone())
             };
             or(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                arg3_option,
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
                 registers,
             )
         }
@@ -308,34 +352,31 @@ pub fn execute(
                 Some(program.arg3.parsed.clone())
             };
             xor(
-                program.arg1.parsed.clone(),
-                program.arg2.parsed.clone(),
-                arg3_option,
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
                 registers,
             )
         }
-        OpCode::NOT => not(program.arg1.parsed.clone(), registers),
-        OpCode::SHL => shl(
-            program.arg1.parsed.clone(),
-            program.arg2.parsed.clone(),
-            registers,
-        ),
-        OpCode::SHR => shr(
-            program.arg1.parsed.clone(),
-            program.arg2.parsed.clone(),
-            registers,
-        ),
+        OpCode::NOT => not(&program.arg1.parsed, registers),
+        OpCode::SHL => {
+            shl(&program.arg1.parsed, &program.arg2.parsed, registers)
+        }
+        OpCode::SHR => {
+            shr(&program.arg1.parsed, &program.arg2.parsed, registers)
+        }
         OpCode::HALT => {
             info!("Halting CPU!");
             next_cpu_stage.set(CpuCycleStage::Halt);
             Ok(())
         }
         OpCode::WDM => wdm(
-            program.arg1.parsed.clone(),
-            program.arg2.parsed.clone(),
-            program.arg3.parsed.clone(),
+            &program.arg1.parsed,
+            &program.arg2.parsed,
+            &program.arg3.parsed,
             r_display_memory,
             registers,
+            memory,
         ),
         OpCode::JMP => {
             let target_symbol =
@@ -345,8 +386,18 @@ pub fn execute(
                 .get(target_symbol)
                 .copied()
                 .unwrap_or_default();
-            program.line = target_line;
-            Ok(())
+            if target_line == 0 {
+                Err(RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: format!(
+                        "JMP target symbol '.{}' not found.",
+                        target_symbol
+                    ),
+                })
+            } else {
+                program.line = target_line;
+                Ok(())
+            }
         }
         _ => {
             warn!("OpCode {:?} not yet implemented!", program.opcode);
@@ -375,6 +426,194 @@ pub fn execute(
 /// ---------------- ///
 /// Helper Functions ///
 /// ---------------- ///
+
+/// Gets a mutable reference to a register by name.
+fn get_register_mut<'a>(
+    registers: &'a mut Registers,
+    reg_name: &str,
+) -> Result<&'a mut Register, RizeError> {
+    registers.get(reg_name).ok_or_else(|| RizeError {
+        type_: RizeErrorType::RegisterRead, // Or RegisterWrite?
+        message: format!("Register '{}' not found!", reg_name),
+    })
+}
+
+/// Reads the u16 value from a register, respecting its current section setting.
+fn read_register_u16(
+    registers: &mut Registers,
+    reg_name: &str,
+) -> Result<u16, RizeError> {
+    let register = get_register_mut(registers, reg_name)?;
+    let bits = match register.section {
+        'a' => register.read(),
+        'b' => register.read_lower_half(),
+        'c' => register.read_lower_quarter(),
+        'd' => register.read_lower_eigth(),
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::RegisterRead,
+                message: format!(
+                    "Invalid section '{}' found in register '{}' during read.",
+                    register.section, reg_name
+                ),
+            })
+        }
+    } // This returns Result<Vec<i8>, &'static str>
+    .map_err(|e| RizeError {
+        // Map the trait error to RizeError
+        type_: RizeErrorType::RegisterRead,
+        message: format!(
+            "Failed to read section '{}' from register {}: {}",
+            register.section, reg_name, e
+        ),
+    })?;
+
+    Ok(bits_to_u16(&bits))
+}
+
+/// Writes a u16 value to a register, respecting its current section setting.
+fn write_register_u16(
+    registers: &mut Registers,
+    reg_name: &str,
+    value: u16,
+) -> Result<(), RizeError> {
+    let register = get_register_mut(registers, reg_name)?;
+    match register.section {
+        'a' => register.store_immediate(value as usize),
+        'b' => {
+            let bits = u16_to_bits(value, CPU_BITTAGE / 2);
+            register.write_lower_half(bits)
+        }
+        'c' => {
+            let bits = u16_to_bits(value, CPU_BITTAGE / 4);
+            register.write_lower_quarter(bits)
+        }
+        'd' => {
+            let bits = u16_to_bits(value, CPU_BITTAGE / 8);
+            register.write_lower_eigth(bits)
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::RegisterWrite,
+            message: format!(
+                "Invalid section '{}' found in register '{}' during write.",
+                register.section, reg_name
+            ),
+        }),
+    }
+}
+
+/// Converts a slice of bits (i8) into a u16, zero-extending if necessary.
+/// Assumes MSB is at index 0.
+fn bits_to_u16(bits: &[i8]) -> u16 {
+    let mut value: u16 = 0;
+    let len = bits.len();
+    let start_bit_index = CPU_BITTAGE.saturating_sub(len); // Target bit index in u16
+    debug!(
+        "bits_to_u16: input_len={}, start_idx={}, input_bits={:?}",
+        len, start_bit_index, bits
+    );
+
+    for (i, bit) in bits.iter().enumerate() {
+        if *bit == 1 {
+            let bit_pos = CPU_BITTAGE - 1 - (start_bit_index + i);
+            value |= 1 << bit_pos;
+        }
+    }
+    value
+}
+
+/// Converts the lower `num_bits` of a u16 into a Vec<i8>.
+/// MSB will be at index 0.
+fn u16_to_bits(value: u16, num_bits: usize) -> Vec<i8> {
+    let mut bits = vec![0i8; num_bits];
+    let start_bit_index_u16 = CPU_BITTAGE.saturating_sub(num_bits);
+    debug!(
+        "u16_to_bits: input_val=0x{:04X}, num_bits={}, start_idx_u16={}",
+        value, num_bits, start_bit_index_u16
+    );
+
+    for i in 0..num_bits {
+        // Corresponding bit index in the full u16 (from the left/MSB)
+        let u16_idx = start_bit_index_u16 + i;
+        // Bit position from the right (LSB=0) in the u16
+        let bit_pos_from_lsb = CPU_BITTAGE - 1 - u16_idx;
+
+        if (value >> bit_pos_from_lsb) & 1 == 1 {
+            bits[i] = 1;
+        }
+    }
+    debug!("u16_to_bits: output_bits={:?}", bits);
+    bits
+}
+
+/// Determines the value of an operand (Register, Immediate, or Memory Address).
+/// Reads section-aware for registers.
+fn get_operand_value(
+    registers: &mut Registers,
+    memory: &Memory,
+    arg: &ArgType,
+) -> Result<u16, RizeError> {
+    match arg {
+        ArgType::Register(reg_name) => {
+            // Now uses the section-aware read
+            read_register_u16(registers, reg_name)
+        }
+        ArgType::Immediate(imm) => Ok(*imm),
+        ArgType::MemAddr(addr) => {
+            memory.read(*addr) // read already returns Result<u16, RizeError>
+        }
+        ArgType::Symbol(sym) => Err(RizeError {
+            type_: RizeErrorType::Decode, // Or Execute?
+            message: format!(
+                "Cannot use symbol '.{}' as an operand value.",
+                sym
+            ),
+        }),
+        ArgType::None | ArgType::Error => Err(RizeError {
+            type_: RizeErrorType::Decode, // Or Execute?
+            message:
+                "Invalid/None ArgType encountered where value operand expected."
+                    .to_string(),
+        }),
+    }
+}
+
+/// Determines the destination register for instructions with an optional 3rd argument.
+/// Returns a mutable reference to the destination register.
+/// UPDATED: Also returns the name of the destination register as a String.
+fn determine_destination_register_mut<'a>(
+    registers: &'a mut Registers,
+    arg1: &ArgType,
+    arg3_opt: &Option<ArgType>,
+) -> Result<(&'a mut Register, String), RizeError> {
+    match arg3_opt {
+        // If arg3 is provided and is a register
+        Some(ArgType::Register(reg3_name)) => {
+            let reg_ref = get_register_mut(registers, reg3_name)?;
+            Ok((reg_ref, reg3_name.clone()))
+        }
+        // If arg3 is omitted, use arg1 (which must be a register)
+        None => {
+            if let ArgType::Register(reg1_name) = arg1 {
+                let reg_ref = get_register_mut(registers, reg1_name)?;
+                Ok((reg_ref, reg1_name.clone()))
+            } else {
+                Err(RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: "Destination (arg1) must be a Register when arg3 is omitted."
+                        .to_string(),
+                })
+            }
+        }
+        // If arg3 is provided but is not a register
+        Some(_) => Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message:
+                "Third argument (destination) must be a Register or omitted."
+                    .to_string(),
+        }),
+    }
+}
 
 /// ### Parsing Rules
 ///
@@ -423,643 +662,266 @@ fn parse_arg(arg: &str) -> ArgType {
 }
 
 fn mov(
-    arg1: ArgType,
-    arg2: ArgType,
-    registers: &Registers, // Add registers parameter
+    arg1: &ArgType, // Destination (Register or MemAddr)
+    arg2: &ArgType, // Source (Register, Immediate, MemAddr)
+    registers: &mut Registers,
+    memory: &mut Memory, // Needs mutable memory for MemAddr dest
 ) -> Result<(), RizeError> {
+    let source_value = get_operand_value(registers, memory, arg2)?;
+
     match arg1 {
-        ArgType::Register(reg) => {
-            let register =
-                registers.get(&reg).expect("Register '{reg}' not found!");
-            register.store(arg2)?;
-            Ok(())
+        ArgType::Register(dest_reg_name) => {
+            // TODO: Implement section-aware writing
+            write_register_u16(registers, dest_reg_name, source_value)
         }
-        ArgType::MemAddr(addr) => {
-            todo!()
+        ArgType::MemAddr(dest_addr) => {
+            memory.write(*dest_addr, source_value) // write returns Result
         }
-        ArgType::Immediate(imm) => Err(RizeError {
+        _ => Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Type 'Immediate' cannot be first Argument to 'MOV'!"
+            message: "MOV destination (arg1) must be Register or MemAddr."
                 .to_string(),
         }),
-        _ => {
-            todo!()
-        }
     }
 }
 
 fn add(
-    arg1: ArgType,
-    arg2: ArgType,
-    arg3: Option<ArgType>,
-    registers: &Registers,
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) {
-        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
-            let register1 =
-                registers.get(&reg1_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg1_name),
-                })?;
-            let register2 =
-                registers.get(&reg2_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg2_name),
-                })?;
+    // Validate arg1 and arg2 are registers and get their values
+    let v1 = get_operand_value(registers, &Memory::new(), arg1)?; // Memory not needed here
+    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
 
-            let v1 = register1.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg1_name, e
-                ),
-            })?;
-            let v2 = register2.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg2_name, e
-                ),
-            })?;
-
-            let result = v1.wrapping_add(v2);
-
-            match arg3 {
-                Some(ArgType::Register(reg3_name)) => {
-                    let register3 =
-                        registers.get(&reg3_name).ok_or_else(|| RizeError {
-                            type_: RizeErrorType::Execute,
-                            message: format!(
-                                "Register '{}' not found!",
-                                reg3_name
-                            ),
-                        })?;
-                    register3.store_immediate(result as usize)?;
-                }
-                None => {
-                    register1.store_immediate(result as usize)?;
-                }
-                Some(_) => {
-                    return Err(RizeError {
-                        type_: RizeErrorType::Execute,
-                        message: "Third argument for 'ADD' must be Type 'Register' or omitted.".to_string(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        _ => Err(RizeError {
+    if !matches!(arg1, ArgType::Register(_))
+        || !matches!(arg2, ArgType::Register(_))
+    {
+        return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Only Type 'Register' is allowed as 'ADD' Argument!"
-                .to_string(),
-        }),
+            message: "ADD requires register operands (arg1, arg2).".to_string(),
+        });
     }
+
+    let result = v1.wrapping_add(v2);
+
+    // Determine destination register using helper
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+
+    // Use section-aware write helper
+    write_register_u16(registers, &dest_name, result)
 }
 
 fn sub(
-    arg1: ArgType,
-    arg2: ArgType,
-    arg3: Option<ArgType>,
-    registers: &Registers,
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) {
-        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
-            let register1 =
-                registers.get(&reg1_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg1_name),
-                })?;
-            let register2 =
-                registers.get(&reg2_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg2_name),
-                })?;
+    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
+    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
 
-            let v1 = register1.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg1_name, e
-                ),
-            })?;
-            let v2 = register2.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg2_name, e
-                ),
-            })?;
-
-            // Use wrapping_sub for safety against underflow
-            let result = v1.wrapping_sub(v2);
-
-            match arg3 {
-                Some(ArgType::Register(reg3_name)) => {
-                    let register3 =
-                        registers.get(&reg3_name).ok_or_else(|| RizeError {
-                            type_: RizeErrorType::Execute,
-                            message: format!(
-                                "Register '{}' not found!",
-                                reg3_name
-                            ),
-                        })?;
-                    register3.store_immediate(result as usize)?;
-                }
-                None => {
-                    register1.store_immediate(result as usize)?;
-                }
-                Some(_) => {
-                    return Err(RizeError {
-                        type_: RizeErrorType::Execute,
-                        message: "Third argument for 'SUB' must be Type 'Register' or omitted.".to_string(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        _ => Err(RizeError {
+    if !matches!(arg1, ArgType::Register(_))
+        || !matches!(arg2, ArgType::Register(_))
+    {
+        return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Only Type 'Register' is allowed as 'SUB' Argument!"
-                .to_string(),
-        }),
+            message: "SUB requires register operands (arg1, arg2).".to_string(),
+        });
     }
+
+    let result = v1.wrapping_sub(v2);
+
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+    // Use section-aware write helper
+    write_register_u16(registers, &dest_name, result)
 }
 
-fn st(registers: &Registers, memory: &mut Memory) -> Result<(), RizeError> {
-    let mar = registers.get("mar").ok_or_else(|| RizeError {
-        type_: RizeErrorType::Execute,
-        message: "Register 'MAR' not found!".to_string(),
-    })?;
-    let mdr = registers.get("mdr").ok_or_else(|| RizeError {
-        type_: RizeErrorType::Execute,
-        message: "Register 'MDR' not found!".to_string(),
-    })?;
-
-    let address = mar.read_u16().map_err(|e| RizeError {
-        type_: RizeErrorType::Execute,
-        message: format!("Failed to read register MAR: {}", e),
-    })?;
-
-    let data = mdr.read_u16().map_err(|e| RizeError {
-        type_: RizeErrorType::Execute,
-        message: format!("Failed to read register MDR: {}", e),
-    })?;
-
-    memory.write(address, data)?;
-
-    Ok(())
+fn st(registers: &mut Registers, memory: &mut Memory) -> Result<(), RizeError> {
+    // TODO: Use section-aware reading if MAR/MDR can be partial?
+    let address = read_register_u16(registers, "mar")?;
+    let data = read_register_u16(registers, "mdr")?;
+    memory.write(address, data)
 }
 
-fn ld(registers: &Registers, memory: &Memory) -> Result<(), RizeError> {
-    // Get MAR and MDR registers
-    let mar = registers.get("mar").ok_or_else(|| RizeError {
-        type_: RizeErrorType::Execute,
-        message: "Register 'MAR' not found!".to_string(),
-    })?;
-    let mdr = registers.get("mdr").ok_or_else(|| RizeError {
-        type_: RizeErrorType::Execute,
-        message: "Register 'MDR' not found!".to_string(),
-    })?;
-
-    // Read address from MAR
-    let address = mar.read_u16().map_err(|e| RizeError {
-        type_: RizeErrorType::Execute,
-        message: format!("Failed to read register MAR: {}", e),
-    })?;
-
-    // Read data from memory using the address
+fn ld(registers: &mut Registers, memory: &Memory) -> Result<(), RizeError> {
+    // TODO: Use section-aware reading if MAR can be partial?
+    let address = read_register_u16(registers, "mar")?;
     let data = memory.read(address)?;
-
-    // Store the data into MDR
-    mdr.store_immediate(data as usize)?;
-
-    Ok(())
+    // TODO: Use section-aware writing if MDR can be partial?
+    write_register_u16(registers, "mdr", data)
 }
 
 fn and(
-    arg1: ArgType,
-    arg2: ArgType,
-    arg3: Option<ArgType>,
-    registers: &Registers,
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) {
-        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
-            let register1 =
-                registers.get(&reg1_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg1_name),
-                })?;
-            let register2 =
-                registers.get(&reg2_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg2_name),
-                })?;
+    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
+    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
 
-            let v1 = register1.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg1_name, e
-                ),
-            })?;
-            let v2 = register2.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg2_name, e
-                ),
-            })?;
-
-            let result = v1 & v2; // Bitwise AND
-
-            match arg3 {
-                Some(ArgType::Register(reg3_name)) => {
-                    let register3 =
-                        registers.get(&reg3_name).ok_or_else(|| RizeError {
-                            type_: RizeErrorType::Execute,
-                            message: format!(
-                                "Register '{}' not found!",
-                                reg3_name
-                            ),
-                        })?;
-                    register3.store_immediate(result as usize)?;
-                }
-                None => {
-                    register1.store_immediate(result as usize)?;
-                }
-                Some(_) => {
-                    return Err(RizeError {
-                        type_: RizeErrorType::Execute,
-                        message: "Third argument for 'AND' must be Type 'Register' or omitted.".to_string(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        _ => Err(RizeError {
+    if !matches!(arg1, ArgType::Register(_))
+        || !matches!(arg2, ArgType::Register(_))
+    {
+        return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Only Type 'Register' is allowed as 'AND' Argument!"
-                .to_string(),
-        }),
+            message: "AND requires register operands (arg1, arg2).".to_string(),
+        });
     }
+
+    let result = v1 & v2;
+
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+    // Use section-aware write helper
+    write_register_u16(registers, &dest_name, result)
 }
 
 fn or(
-    arg1: ArgType,
-    arg2: ArgType,
-    arg3: Option<ArgType>,
-    registers: &Registers,
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) {
-        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
-            let register1 =
-                registers.get(&reg1_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg1_name),
-                })?;
-            let register2 =
-                registers.get(&reg2_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg2_name),
-                })?;
+    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
+    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
 
-            let v1 = register1.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg1_name, e
-                ),
-            })?;
-            let v2 = register2.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg2_name, e
-                ),
-            })?;
-
-            let result = v1 | v2; // Bitwise OR
-
-            match arg3 {
-                Some(ArgType::Register(reg3_name)) => {
-                    let register3 =
-                        registers.get(&reg3_name).ok_or_else(|| RizeError {
-                            type_: RizeErrorType::Execute,
-                            message: format!(
-                                "Register '{}' not found!",
-                                reg3_name
-                            ),
-                        })?;
-                    register3.store_immediate(result as usize)?;
-                }
-                None => {
-                    register1.store_immediate(result as usize)?;
-                }
-                Some(_) => {
-                    return Err(RizeError {
-                        type_: RizeErrorType::Execute,
-                        message: "Third argument for 'OR' must be Type 'Register' or omitted.".to_string(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        _ => Err(RizeError {
+    if !matches!(arg1, ArgType::Register(_))
+        || !matches!(arg2, ArgType::Register(_))
+    {
+        return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Only Type 'Register' is allowed as 'OR' Argument!"
-                .to_string(),
-        }),
+            message: "OR requires register operands (arg1, arg2).".to_string(),
+        });
     }
+
+    let result = v1 | v2;
+
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+    // Use section-aware write helper
+    write_register_u16(registers, &dest_name, result)
 }
 
 fn xor(
-    arg1: ArgType,
-    arg2: ArgType,
-    arg3: Option<ArgType>,
-    registers: &Registers,
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) {
-        (ArgType::Register(reg1_name), ArgType::Register(reg2_name)) => {
-            let register1 =
-                registers.get(&reg1_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg1_name),
-                })?;
-            let register2 =
-                registers.get(&reg2_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg2_name),
-                })?;
+    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
+    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
 
-            let v1 = register1.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg1_name, e
-                ),
-            })?;
-            let v2 = register2.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {}: {}",
-                    reg2_name, e
-                ),
-            })?;
-
-            let result = v1 ^ v2; // Bitwise XOR
-
-            match arg3 {
-                Some(ArgType::Register(reg3_name)) => {
-                    let register3 =
-                        registers.get(&reg3_name).ok_or_else(|| RizeError {
-                            type_: RizeErrorType::Execute,
-                            message: format!(
-                                "Register '{}' not found!",
-                                reg3_name
-                            ),
-                        })?;
-                    register3.store_immediate(result as usize)?;
-                }
-                None => {
-                    register1.store_immediate(result as usize)?;
-                }
-                Some(_) => {
-                    return Err(RizeError {
-                        type_: RizeErrorType::Execute,
-                        message: "Third argument for 'XOR' must be Type 'Register' or omitted.".to_string(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        _ => Err(RizeError {
+    if !matches!(arg1, ArgType::Register(_))
+        || !matches!(arg2, ArgType::Register(_))
+    {
+        return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Only Type 'Register' is allowed as 'XOR' Argument!"
-                .to_string(),
-        }),
+            message: "XOR requires register operands (arg1, arg2).".to_string(),
+        });
     }
+
+    let result = v1 ^ v2;
+
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+    // Use section-aware write helper
+    write_register_u16(registers, &dest_name, result)
 }
 
-fn not(arg1: ArgType, registers: &Registers) -> Result<(), RizeError> {
-    match arg1 {
-        ArgType::Register(reg_name) => {
-            let register =
-                registers.get(&reg_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!("Register '{}' not found!", reg_name),
-                })?;
-
-            let v1 = register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Failed to read register {}: {}", reg_name, e),
-            })?;
-
-            let result = !v1; // Bitwise NOT
-
-            register.store_immediate(result as usize)?;
-            Ok(())
-        }
-        _ => Err(RizeError {
+fn not(arg1: &ArgType, registers: &mut Registers) -> Result<(), RizeError> {
+    if let ArgType::Register(reg_name) = arg1 {
+        // TODO: Use section-aware reading
+        let v1 = read_register_u16(registers, reg_name)?;
+        let result = !v1;
+        // TODO: Use section-aware writing
+        write_register_u16(registers, reg_name, result)
+    } else {
+        Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "Argument for 'NOT' must be a Register.".to_string(),
-        }),
+            message: "NOT requires a Register operand (arg1).".to_string(),
+        })
     }
 }
 
 fn shl(
-    arg1: ArgType, // Target Register
-    arg2: ArgType, // Amount Immediate (Optional, defaults to 1)
-    registers: &Registers,
+    arg1: &ArgType, // Target Register
+    arg2: &ArgType, // Amount Immediate (Optional, defaults to 1)
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) { 
-        // Case 1: Shift amount is provided as Immediate
-        (ArgType::Register(target_reg_name), ArgType::Immediate(amount)) => {
-            let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Target Register '{}' not found!", target_reg_name),
-            })?;
-            
-            let value = target_register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Failed to read target register {}: {}", target_reg_name, e),
-            })?;
-            
-            let result = value << amount;
-            
-            target_register.store_immediate(result as usize)?;
-            Ok(())
-        }
-        // Case 2: Shift amount is omitted (ArgType::None), default to 1
-        (ArgType::Register(target_reg_name), ArgType::None) => {
-             let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Target Register '{}' not found!", target_reg_name),
-            })?;
-            
-            let value = target_register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Failed to read target register {}: {}", target_reg_name, e),
-            })?;
-            
-            let result = value << 1; // Default shift by 1
-            
-            target_register.store_immediate(result as usize)?;
-            Ok(())
-        }
-        // Updated error message for new signature
-        _ => Err(RizeError {
+    if let ArgType::Register(target_reg_name) = arg1 {
+        let amount = match arg2 {
+            ArgType::Immediate(imm) => *imm,
+            ArgType::None => 1, // Default shift amount
+            _ => {
+                return Err(RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: "SHL amount (arg2) must be Immediate or omitted."
+                        .to_string(),
+                })
+            }
+        };
+
+        // TODO: Use section-aware reading
+        let value = read_register_u16(registers, target_reg_name)?;
+        let result = value << amount;
+        // TODO: Use section-aware writing
+        write_register_u16(registers, target_reg_name, result)
+    } else {
+        Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "'SHL' requires arguments: Register (Target) [, Immediate (Amount)]. Amount defaults to 1 if omitted."
-                .to_string(),
-        }),
+            message: "SHL target (arg1) must be a Register.".to_string(),
+        })
     }
 }
 
 fn shr(
-    arg1: ArgType, // Target Register
-    arg2: ArgType, // Amount Immediate (Optional, defaults to 1)
-    registers: &Registers,
+    arg1: &ArgType, // Target Register
+    arg2: &ArgType, // Amount Immediate (Optional, defaults to 1)
+    registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    match (arg1, arg2) { 
-        // Case 1: Shift amount is provided as Immediate
-        (ArgType::Register(target_reg_name), ArgType::Immediate(amount)) => {
-            let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Target Register '{}' not found!", target_reg_name),
-            })?;
-            
-            let value = target_register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Failed to read target register {}: {}", target_reg_name, e),
-            })?;
-            
-            let result = value >> amount;
-            
-            target_register.store_immediate(result as usize)?;
-            Ok(())
-        }
-        // Case 2: Shift amount is omitted (ArgType::None), default to 1
-        (ArgType::Register(target_reg_name), ArgType::None) => {
-            let target_register = registers.get(&target_reg_name).ok_or_else(|| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Target Register '{}' not found!", target_reg_name),
-            })?;
-            
-            let value = target_register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!("Failed to read target register {}: {}", target_reg_name, e),
-            })?;
-            
-            let result = value >> 1; // Default shift by 1
-            
-            target_register.store_immediate(result as usize)?;
-            Ok(())
-        }
-        // Updated error message for new signature
-        _ => Err(RizeError {
+    if let ArgType::Register(target_reg_name) = arg1 {
+        let amount = match arg2 {
+            ArgType::Immediate(imm) => *imm,
+            ArgType::None => 1,
+            _ => {
+                return Err(RizeError {
+                    type_: RizeErrorType::Execute,
+                    message: "SHR amount (arg2) must be Immediate or omitted."
+                        .to_string(),
+                })
+            }
+        };
+
+        // TODO: Use section-aware reading
+        let value = read_register_u16(registers, target_reg_name)?;
+        let result = value >> amount;
+        // TODO: Use section-aware writing
+        write_register_u16(registers, target_reg_name, result)
+    } else {
+        Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "'SHR' requires arguments: Register (Target) [, Immediate (Amount)]. Amount defaults to 1 if omitted."
-                .to_string(),
-        }),
+            message: "SHR target (arg1) must be a Register.".to_string(),
+        })
     }
 }
 
-/// ### Dev Metadata
-/// #### Expected Argument Layout
-/// arg1:
-///     - upper 8 bits  ->  Red
-///     - lower 8 bits  ->  Green
-/// arg2:
-///     - upper 8 bits  ->  Blue
-///     - lower 8 bits  ->  Alpha
-/// arg3:
-///     - upper 8 bits  ->  X
-///     - lower 8 bits  ->  Y
 fn wdm(
-    arg1: ArgType,
-    arg2: ArgType,
-    arg3: ArgType,
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3: &ArgType,
     mut r_display_memory: ResMut<DisplayMemory>,
-    registers: &Registers,
+    registers: &mut Registers,
+    memory: &Memory, // Added memory
 ) -> Result<(), RizeError> {
-    let val1 = match arg1 {
-        ArgType::Immediate(v) => v,
-        ArgType::Register(reg_name) => {
-            let register =
-                registers.get(&reg_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!(
-                        "Register '{}' not found for WDM arg1!",
-                        reg_name
-                    ),
-                })?;
-            register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {} for WDM arg1: {}",
-                    reg_name, e
-                ),
-            })?
-        }
-        _ => {
-            return Err(RizeError {
-                type_: RizeErrorType::Execute,
-                message: "WDM arg1 must be Immediate or Register".to_string(),
-            })
-        }
-    };
-    let val2 = match arg2 {
-        ArgType::Immediate(v) => v,
-        ArgType::Register(reg_name) => {
-            let register =
-                registers.get(&reg_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!(
-                        "Register '{}' not found for WDM arg2!",
-                        reg_name
-                    ),
-                })?;
-            register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {} for WDM arg2: {}",
-                    reg_name, e
-                ),
-            })?
-        }
-        _ => {
-            return Err(RizeError {
-                type_: RizeErrorType::Execute,
-                message: "WDM arg2 must be Immediate or Register".to_string(),
-            })
-        }
-    };
-    let val3 = match arg3 {
-        ArgType::Immediate(v) => v,
-        ArgType::Register(reg_name) => {
-            let register =
-                registers.get(&reg_name).ok_or_else(|| RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!(
-                        "Register '{}' not found for WDM arg3!",
-                        reg_name
-                    ),
-                })?;
-            register.read_u16().map_err(|e| RizeError {
-                type_: RizeErrorType::Execute,
-                message: format!(
-                    "Failed to read register {} for WDM arg3: {}",
-                    reg_name, e
-                ),
-            })?
-        }
-        _ => {
-            return Err(RizeError {
-                type_: RizeErrorType::Execute,
-                message: "WDM arg3 must be Immediate or Register".to_string(),
-            })
-        }
-    };
+    // TODO: Use section-aware reading for register args
+    let val1 = get_operand_value(registers, memory, arg1)?;
+    let val2 = get_operand_value(registers, memory, arg2)?;
+    let val3 = get_operand_value(registers, memory, arg3)?;
 
     let red = (val1 >> 8) as u8;
     let green = (val1 & 0xFF) as u8;
