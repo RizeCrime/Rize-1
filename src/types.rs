@@ -212,13 +212,7 @@ impl Registers {
             } // else: not a 'g' register or too short, defaults to 'a'
         }
 
-        info!(
-            "Get request: original='{}', base_lookup='{}', section='{}'",
-            original_name, lookup_name, section
-        );
-
         let lookup_key = lookup_name.to_ascii_lowercase();
-        info!("Searching map with key: '{}'", lookup_key);
 
         // Check for key existence before mutable borrow
         if self.all.contains_key(&lookup_key) {
