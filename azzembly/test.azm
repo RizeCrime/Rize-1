@@ -1,3 +1,8 @@
+MOV GAD 1
+MOV GAC 4
+MOV GAB 16
+MOV GAA 64
+
 MOV GAA 42 
 MOV GBA 1337 
 
@@ -13,4 +18,12 @@ LD
 XOR MDR 
 NOT GAA 
 
+JMP .symbolioni
 
+.exit
+HALT 
+
+.symbolioni
+MOV GAB 255
+
+JMP .exit
