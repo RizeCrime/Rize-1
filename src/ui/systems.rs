@@ -1,11 +1,13 @@
+use std::collections::HashMap;
 use std::{ffi::OsStr, path::PathBuf};
 
-use bevy::{prelude::*, text::cosmic_text::ttf_parser::name};
+use bevy::image::{ImageSampler, ImageSamplerDescriptor};
 use rand::Rng;
 use Display::*;
 use FlexDirection::*;
 
 use super::*;
+use crate::interpreter::DisplayMemory;
 use crate::{
     interpreter::{ActiveProgram, AzmPrograms},
     *,
@@ -44,6 +46,7 @@ pub fn setup_gp_registers(
                 .flex_direction(FlexDirection::Column)
                 .float("left")
                 .float("bottom")
+                .absolute()
                 .build(),
         ))
         .id();
@@ -155,20 +158,19 @@ pub fn setup_core_registers(
 ) {
     let ui_root = get_ui_root_from_query(&q_ui_root);
 
-    // Create main container for core registers
     let ui_core_registers = commands
         .spawn(create_ui_node(
             "R1_UiCoreRegisters".into(),
             NodeBuilder::new()
                 .display(Display::Flex)
                 .flex_direction(FlexDirection::Column)
-                .float("left") // Position bottom-left like GP registers
+                .float("right")
                 .float("bottom")
+                .absolute()
                 .build(),
         ))
         .id();
 
-    // Add title for core registers
     let ui_core_registers_text = commands
         .spawn((
             Text::new("Core Registers"),
@@ -178,22 +180,17 @@ pub fn setup_core_registers(
         ))
         .id();
 
-    // Add container and title to the UI hierarchy
     commands.entity(ui_root).add_child(ui_core_registers);
     commands
         .entity(ui_core_registers)
         .add_child(ui_core_registers_text);
 
-    let r_registers_map = r_registers.all(); // Get the register map
+    let r_registers_map = r_registers.all();
 
-    // Define the names of the core registers to display
     let core_register_names = ["mar", "mdr", "pc"];
 
-    // Iterate through the core register names
     for name in core_register_names {
-        // Get the register data from the resource map
         if let Some(register) = r_registers_map.get(name) {
-            // Container for the bits display (Flex Row)
             let bits_container = commands
                 .spawn(create_ui_node(
                     format!("ui_register_bits_{name}"),
@@ -204,44 +201,40 @@ pub fn setup_core_registers(
                 ))
                 .id();
 
-            // Text displaying the register name
             let bits_container_text = commands
                 .spawn((
-                    Text::new(format!(" {name} :\t")), // Display register name
+                    Text::new(format!(" {name} :\t")),
                     Name::new(format!("ui-register-bits-{name}-text")),
                     UiElement,
                 ))
                 .id();
 
-            // Placeholder Text nodes for parsed values
             let parsed_u16 = commands
                 .spawn((
-                    Text::new("_"), // Initial placeholder
+                    Text::new("_"),
                     Name::new(format!("ui-register-parsed-{name}-u16")),
                     UiElement,
                 ))
                 .id();
             let parsed_ascii = commands
                 .spawn((
-                    Text::new("_"), // Initial placeholder
+                    Text::new("_"),
                     Name::new(format!("ui-register-parsed-{name}-ascii")),
                     UiElement,
                 ))
                 .id();
             let parsed_hex = commands
                 .spawn((
-                    Text::new("_"), // Initial placeholder
+                    Text::new("_"),
                     Name::new(format!("ui-register-parsed-{name}-hex")),
                     UiElement,
                 ))
                 .id();
 
-            // Add register name text to the bits container
             commands
                 .entity(bits_container)
                 .add_child(bits_container_text);
 
-            // Add bits container and parsed value placeholders to the main core registers container
             commands.entity(ui_core_registers).add_child(bits_container);
             commands.entity(ui_core_registers).add_children(&[
                 parsed_u16,
@@ -249,28 +242,25 @@ pub fn setup_core_registers(
                 parsed_ascii,
             ]);
 
-            // Read the bits from the register
             let bits = match register.read() {
                 Ok(b) => b,
                 Err(e) => {
-                    // Log error and skip this register if read fails
                     error!("Failed to read register {}: {}", name, e);
                     continue;
                 }
             };
 
-            // Create UI elements for each individual bit
             for (idx, bit) in bits.iter().enumerate() {
                 let bit_container = commands
                     .spawn(create_ui_node(
                         format!("ui-register-bit-{name}-{idx}"),
-                        NodeBuilder::new().float("left").build(), // Position bits left-to-right
+                        NodeBuilder::new().float("left").build(),
                     ))
                     .id();
 
                 let bit_value = commands
                     .spawn((
-                        Text::new(bit.bit_to_string()), // Display '0' or '1'
+                        Text::new(bit.bit_to_string()),
                         Name::new(format!(
                             "ui-register-bit-{name}-{idx}-value"
                         )),
@@ -278,13 +268,10 @@ pub fn setup_core_registers(
                     ))
                     .id();
 
-                // Add the bit value text to its container
                 commands.entity(bit_container).add_child(bit_value);
-                // Add the bit container to the row of bits
                 commands.entity(bits_container).add_child(bit_container);
             }
         } else {
-            // Log a warning if a defined core register name is not found
             warn!("Core register '{}' not found in resource map.", name);
         }
     }
@@ -302,12 +289,12 @@ pub fn setup_instruction_ui(
             NodeBuilder::new()
                 .absolute()
                 .width(Val::Percent(35.0))
-                .height(Val::Percent(20.0))
+                .height(Val::Percent(10.0))
                 .float("top")
                 .margin(UiRect {
                     left: Val::Auto,
                     right: Val::Auto,
-                    top: Val::Percent(5.0),
+                    top: Val::Percent(2.5),
                     bottom: Val::Auto,
                 })
                 .display(Flex)
@@ -368,6 +355,7 @@ pub fn setup_ui_cpu_cycle_stage(
                 .flex_direction(FlexDirection::Column)
                 .float("top")
                 .float("right")
+                .absolute()
                 .build(),
         ))
         .id();
@@ -456,6 +444,53 @@ pub fn setup_available_programs(
         .id();
 
     commands.entity(ui_programs).add_child(ui_programs_text);
+}
+
+pub fn setup_display(
+    mut commands: Commands,
+    q_ui_root: Query<(Entity, &Name), With<UiElement>>,
+    mut r_pixel_display: Option<ResMut<PixelDisplay>>,
+    mut r_images: ResMut<Assets<Image>>,
+) {
+    let image_size = bevy::render::render_resource::Extent3d {
+        width: 256,
+        height: 256,
+        depth_or_array_layers: 1,
+    };
+    let data_size = (256 * 256 * 4) as usize;
+    let mut image_data = vec![0u8; data_size];
+
+    for i in (3..data_size).step_by(4) {
+        image_data[i] = 255;
+    }
+
+    let mut image = Image::new(
+        image_size,
+        bevy::render::render_resource::TextureDimension::D2,
+        image_data,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD
+            | bevy::render::render_asset::RenderAssetUsages::MAIN_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor::nearest());
+
+    let h_image = r_images.add(image);
+
+    commands.insert_resource(PixelDisplay {
+        h_image: h_image.clone(),
+    });
+
+    let _display_sprite = commands
+        .spawn((
+            Sprite {
+                image: h_image.clone(),
+                ..Default::default()
+            },
+            Transform::from_xyz(0.0, 0.0, 0.0)
+                .with_scale(Vec3::new(2.0, 2.0, 1.0)),
+            Name::new("ui-display"),
+        ))
+        .id();
 }
 
 /// -------------- ///
@@ -696,6 +731,30 @@ pub fn update_instruction_ui(
     }
 }
 
+pub fn update_display(
+    r_display: Res<DisplayMemory>,
+    mut r_pixel_display: ResMut<PixelDisplay>,
+    mut r_images: ResMut<Assets<Image>>,
+) {
+    // for x in 0..256 {
+    //     for y in 0..256 {
+    //         let color = [x as u8, 0 as u8, y as u8, 255 as u8];
+    //         r_pixel_display
+    //             .set_pixel(x, y, color, &mut r_images)
+    //             .unwrap();
+    //     }
+    // }
+    for x in 0..256 {
+        for y in 0..256 {
+            let target_color = r_display.get_pixel(x, y).unwrap();
+
+            r_pixel_display
+                .set_pixel(x as usize, y as usize, target_color, &mut r_images)
+                .unwrap();
+        }
+    }
+}
+
 /// ---------------- ///
 /// Helper Functions ///
 /// ---------------- ///
@@ -830,6 +889,37 @@ fn create_ui_node(
     (node, border_color, name_component, UiElement)
 }
 
+fn create_ui_pixel(
+    x: usize,
+    y: usize,
+    mut r_meshes: &mut ResMut<Assets<Mesh>>,
+    mut r_materials: &mut ResMut<Assets<ColorMaterial>>,
+) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transform, Name) {
+    let name = Name::new(format!("ui-pixel-{x}-{y}"));
+
+    let mut h_meshes = HashMap::new();
+    let mut h_materials = HashMap::new();
+
+    let h_mesh: &Handle<Mesh> = h_meshes
+        .entry("mesh-ui-pixel")
+        .or_insert_with(|| r_meshes.add(Rectangle::default()));
+
+    let h_material: &Handle<ColorMaterial> = h_materials
+        .entry(format!("material-ui-pixel-{x}-{y}"))
+        .or_insert_with(|| {
+            r_materials.add(ColorMaterial::from(Color::linear_rgba(
+                x as f32, 0.0, y as f32, 1.0,
+            )))
+        });
+
+    (
+        Mesh2d(h_mesh.clone()),
+        MeshMaterial2d(h_material.clone()),
+        Transform::default().with_scale(Vec3::splat(256.0)),
+        name,
+    )
+}
+
 fn create_random_border_color() -> BorderColor {
     let mut rng = rand::rng(); // Use rng instead of thread_rng
     let random_color = Color::linear_rgb(
@@ -839,7 +929,6 @@ fn create_random_border_color() -> BorderColor {
     );
     BorderColor(random_color)
 }
-
 // Keep the old create_ui_node signature for now if needed, but mark as deprecated or remove
 /*
 fn create_ui_node(

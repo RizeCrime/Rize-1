@@ -16,11 +16,14 @@ impl Plugin for RizeOneUi {
             Startup,
             (
                 setup_ui_root,
-                setup_gp_registers,
-                setup_core_registers,
-                setup_ui_cpu_cycle_stage,
-                setup_available_programs,
-                setup_instruction_ui,
+                (
+                    setup_gp_registers,
+                    setup_core_registers,
+                    setup_ui_cpu_cycle_stage,
+                    setup_available_programs,
+                    setup_instruction_ui,
+                    setup_display,
+                ),
             )
                 .chain(),
         );
@@ -33,7 +36,42 @@ impl Plugin for RizeOneUi {
                 update_registers,
                 update_register_parsed,
                 update_instruction_ui,
+                update_display,
             ),
         );
+    }
+}
+
+#[derive(Resource)]
+pub struct PixelDisplay {
+    h_image: Handle<Image>,
+}
+
+impl PixelDisplay {
+    pub fn set_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        color: [u8; 4],
+        mut r_images: &mut ResMut<Assets<Image>>,
+    ) -> Result<(), RizeError> {
+        if x > 255 || y > 255 {
+            return Err(RizeError {
+                type_: RizeErrorType::Display,
+                message: format!("Coordinates ({}, {}) out of bounds", x, y),
+            });
+        }
+
+        let image: &mut Image = r_images.get_mut(&self.h_image).unwrap();
+        let image_data: &mut [u8] = image.data.as_mut_slice();
+
+        let index = ((y * 256 + x) * 4) as usize;
+        if index + 4 <= image_data.len() {
+            image_data[index..index + 4].copy_from_slice(&color);
+        } else {
+            warn!("Pixel at ({x}, {y}) Out Of Bounds!");
+        }
+
+        Ok(())
     }
 }
