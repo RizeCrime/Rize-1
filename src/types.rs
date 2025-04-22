@@ -37,9 +37,16 @@ pub trait RegisterTrait {
     #[doc(hidden)]
     fn store_immediate(&self, value: usize) -> Result<(), RizeError>;
 
+    fn write_bool(&self, value: bool) -> Result<(), RizeError>;
     fn write_lower_half(&self, value: Vec<i8>) -> Result<(), RizeError>;
     fn write_lower_quarter(&self, value: Vec<i8>) -> Result<(), RizeError>;
     fn write_lower_eigth(&self, value: Vec<i8>) -> Result<(), RizeError>;
+
+    /// Reads the u16 value from the register, respecting its current section setting.
+    fn read_section_u16(&self) -> Result<u16, RizeError>;
+
+    /// Writes a u16 value to the register, respecting its current section setting.
+    fn write_section_u16(&self, value: u16) -> Result<(), RizeError>;
 }
 
 impl RegisterTrait for Register {
@@ -108,6 +115,12 @@ impl RegisterTrait for Register {
         Ok(())
     }
 
+    fn write_bool(&self, value: bool) -> Result<(), RizeError> {
+        let mut bits = self.bits.lock().unwrap();
+        bits[0] = value as i8;
+        Ok(())
+    }
+
     fn write_lower_half(&self, value: Vec<i8>) -> Result<(), RizeError> {
         let mut bits = self.bits.lock().map_err(|_| RizeError {
             type_: RizeErrorType::RegisterWrite,
@@ -167,6 +180,62 @@ impl RegisterTrait for Register {
         let start_index = CPU_BITTAGE * 7 / 8;
         bits[start_index..].copy_from_slice(&value);
         Ok(())
+    }
+
+    /// Reads the u16 value from the register, respecting its current section setting.
+    fn read_section_u16(&self) -> Result<u16, RizeError> {
+        let bits_result = match self.section {
+            'a' => self.read(),
+            'b' => self.read_lower_half(),
+            'c' => self.read_lower_quarter(),
+            'd' => self.read_lower_eigth(),
+            invalid_section => {
+                return Err(RizeError {
+                    type_: RizeErrorType::RegisterRead,
+                    message: format!(
+                        "Invalid section '{}' found in register during read.",
+                        invalid_section
+                    ),
+                })
+            }
+        };
+
+        // Map the Result<Vec<i8>, &'static str> to Result<Vec<i8>, RizeError>
+        let bits = bits_result.map_err(|e| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!(
+                "Failed to read section '{}': {}",
+                self.section, e
+            ),
+        })?;
+
+        Ok(bits_to_u16(&bits))
+    }
+
+    /// Writes a u16 value to the register, respecting its current section setting.
+    fn write_section_u16(&self, value: u16) -> Result<(), RizeError> {
+        match self.section {
+            'a' => self.store_immediate(value as usize),
+            'b' => {
+                let bits = u16_to_bits(value, CPU_BITTAGE / 2);
+                self.write_lower_half(bits)
+            }
+            'c' => {
+                let bits = u16_to_bits(value, CPU_BITTAGE / 4);
+                self.write_lower_quarter(bits)
+            }
+            'd' => {
+                let bits = u16_to_bits(value, CPU_BITTAGE / 8);
+                self.write_lower_eigth(bits)
+            }
+            invalid_section => Err(RizeError {
+                type_: RizeErrorType::RegisterWrite,
+                message: format!(
+                    "Invalid section '{}' found in register during write.",
+                    invalid_section
+                ),
+            }),
+        } // This directly returns Result<(), RizeError>
     }
 }
 
@@ -382,4 +451,54 @@ pub enum RizeErrorType {
 pub struct RizeError {
     pub type_: RizeErrorType,
     pub message: String,
+}
+
+/// Converts a slice of bits (i8) into a u16, zero-extending if necessary.
+/// Assumes MSB is at index 0.
+fn bits_to_u16(bits: &[i8]) -> u16 {
+    let mut value: u16 = 0;
+    let len = bits.len();
+    let start_bit_index = CPU_BITTAGE.saturating_sub(len); // Target bit index in u16
+
+    for (i, bit) in bits.iter().enumerate() {
+        if *bit == 1 {
+            let bit_pos = CPU_BITTAGE - 1 - (start_bit_index + i);
+            value |= 1 << bit_pos;
+        }
+    }
+    value
+}
+
+/// Converts the lower `num_bits` of a u16 into a Vec<i8>.
+/// MSB will be at index 0.
+fn u16_to_bits(value: u16, num_bits: usize) -> Vec<i8> {
+    let mut bits = vec![0i8; num_bits];
+    let start_bit_index_u16 = CPU_BITTAGE.saturating_sub(num_bits);
+
+    for i in 0..num_bits {
+        // Corresponding bit index in the full u16 (from the left/MSB)
+        let u16_idx = start_bit_index_u16 + i;
+        // Bit position from the right (LSB=0) in the u16
+        let bit_pos_from_lsb = CPU_BITTAGE - 1 - u16_idx;
+
+        if (value >> bit_pos_from_lsb) & 1 == 1 {
+            bits[i] = 1;
+        }
+    }
+    bits
+}
+
+trait PosNegTrait {
+    fn is_negative(self) -> bool;
+    fn is_positive(self) -> bool;
+}
+
+impl PosNegTrait for i32 {
+    fn is_negative(self) -> bool {
+        self < 0
+    }
+
+    fn is_positive(self) -> bool {
+        self >= 0
+    }
 }

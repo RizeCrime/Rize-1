@@ -16,8 +16,10 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
 
     r_registers
         .as_mut()
-        .insert("ir".into(), instruction_register);
-    r_registers.as_mut().insert("pc".into(), program_counter);
+        .insert(INSTRUCTION_REGISTER.into(), instruction_register);
+    r_registers
+        .as_mut()
+        .insert(PROGRAM_COUNTER.into(), program_counter);
     r_registers
         .as_mut()
         .insert("mar".into(), memory_address_register);
@@ -34,10 +36,14 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
     let overflow_flag = Register::init(1);
     let negative_flag = Register::init(1);
 
-    r_registers.as_mut().insert("zf".into(), zero_flag);
-    r_registers.as_mut().insert("cf".into(), carry_flag);
-    r_registers.as_mut().insert("of".into(), overflow_flag);
-    r_registers.as_mut().insert("nf".into(), negative_flag);
+    r_registers.as_mut().insert(FLAG_ZERO.into(), zero_flag);
+    r_registers.as_mut().insert(FLAG_CARRY.into(), carry_flag);
+    r_registers
+        .as_mut()
+        .insert(FLAG_OVERFLOW.into(), overflow_flag);
+    r_registers
+        .as_mut()
+        .insert(FLAG_NEGATIVE.into(), negative_flag);
 
     info!("Finished setting up Flags.");
     info!("Setting up General Purpose Registers...");

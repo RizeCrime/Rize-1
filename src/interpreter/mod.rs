@@ -6,6 +6,7 @@ use std::str::{FromStr, Lines};
 
 use bevy::prelude::*;
 use bevy::tasks::futures_lite::stream::Pending;
+use bevy::utils::info;
 use bevy_inspector_egui::prelude::*;
 use display::RizeOneDisplay;
 
@@ -80,17 +81,17 @@ impl Plugin for RizeOneInterpreter {
 
         app.add_systems(Update, check_azm_programs);
 
+        // add systems OnEnter, for manual step-through
+        app.add_systems(OnEnter(CpuCycleStage::Fetch), fetch);
+        app.add_systems(OnEnter(CpuCycleStage::Decode), decode);
+        app.add_systems(OnEnter(CpuCycleStage::Execute), execute);
+
+        // add systems as Update, for auto-stepping
         app.add_systems(
-            OnEnter(CpuCycleStage::Fetch),
-            (tick_cpu, fetch).chain(),
-        );
-        app.add_systems(
-            OnEnter(CpuCycleStage::Decode),
-            (tick_cpu, decode).chain(),
-        );
-        app.add_systems(
-            OnEnter(CpuCycleStage::Execute),
-            (tick_cpu, execute).chain(),
+            Update,
+            (fetch, decode, execute)
+                .chain()
+                .run_if(in_state(CpuCycleStage::AutoStep)),
         );
     }
 }
@@ -197,6 +198,11 @@ pub fn fetch(
     mut r_registers: ResMut<Registers>,
 ) {
     let mut program = r_active_program.as_mut();
+    // load the current program counter value into lines to operate on,
+    // in case the user overwrote the pc register manually.
+    // not the most elegant solution; but hey it should work?
+    let pc: &mut Register = r_registers.get(PROGRAM_COUNTER).unwrap();
+    program.line = pc.read_u16().unwrap() as usize;
 
     // Create an iterator starting from the current line
     let mut lines_iter = program.contents.lines().skip(program.line);
@@ -232,6 +238,11 @@ pub fn fetch(
             };
 
             program.line += 1;
+            r_registers
+                .get(PROGRAM_COUNTER)
+                .unwrap()
+                .store_immediate(program.line as usize)
+                .unwrap();
             break;
         } else {
             info!("End of program reached. Halting CPU.");
@@ -326,6 +337,7 @@ pub fn execute(
                 &program.arg2.parsed,
                 &arg3_option,
                 registers,
+                &r_memory,
             )
         }
         OpCode::ST => st(registers, memory),
@@ -407,13 +419,19 @@ pub fn execute(
                 })
             } else {
                 program.line = target_line;
-                // Also update PC register
-                write_register_u16(registers, "pc", target_line as u16)
+                match get_register_mut(registers, PROGRAM_COUNTER) {
+                    Ok(pc_reg) => pc_reg.write_section_u16(target_line as u16),
+                    Err(e) => Err(e),
+                }
             }
         }
         OpCode::JIZ => {
             // Read flag, handling Result
-            match read_register_u16(registers, "fz") {
+            match get_operand_value(
+                registers,
+                &Memory::new(),
+                &ArgType::Register(FLAG_ZERO.to_string()),
+            ) {
                 Ok(zero_flag) => {
                     if zero_flag == 1 {
                         // Jump logic
@@ -437,11 +455,12 @@ pub fn execute(
                             })
                         } else {
                             program.line = target_line;
-                            write_register_u16(
-                                registers,
-                                "pc",
-                                target_line as u16,
-                            )
+                            match get_register_mut(registers, PROGRAM_COUNTER) {
+                                Ok(pc_reg) => {
+                                    pc_reg.write_section_u16(target_line as u16)
+                                }
+                                Err(e) => Err(e),
+                            }
                         }
                     } else {
                         // Flag is zero, don't jump
@@ -453,7 +472,11 @@ pub fn execute(
         }
         OpCode::JIN => {
             // Read flag, handling Result
-            match read_register_u16(registers, "fn") {
+            match get_operand_value(
+                registers,
+                &Memory::new(),
+                &ArgType::Register(FLAG_NEGATIVE.to_string()),
+            ) {
                 Ok(negative_flag) => {
                     if negative_flag == 1 {
                         // Jump logic
@@ -477,11 +500,12 @@ pub fn execute(
                             })
                         } else {
                             program.line = target_line;
-                            write_register_u16(
-                                registers,
-                                "pc",
-                                target_line as u16,
-                            )
+                            match get_register_mut(registers, PROGRAM_COUNTER) {
+                                Ok(pc_reg) => {
+                                    pc_reg.write_section_u16(target_line as u16)
+                                }
+                                Err(e) => Err(e),
+                            }
                         }
                     } else {
                         // Flag is zero, don't jump
@@ -530,114 +554,6 @@ fn get_register_mut<'a>(
     })
 }
 
-/// Reads the u16 value from a register, respecting its current section setting.
-fn read_register_u16(
-    registers: &mut Registers,
-    reg_name: &str,
-) -> Result<u16, RizeError> {
-    let register = get_register_mut(registers, reg_name)?;
-    let bits = match register.section {
-        'a' => register.read(),
-        'b' => register.read_lower_half(),
-        'c' => register.read_lower_quarter(),
-        'd' => register.read_lower_eigth(),
-        _ => {
-            return Err(RizeError {
-                type_: RizeErrorType::RegisterRead,
-                message: format!(
-                    "Invalid section '{}' found in register '{}' during read.",
-                    register.section, reg_name
-                ),
-            })
-        }
-    } // This returns Result<Vec<i8>, &'static str>
-    .map_err(|e| RizeError {
-        // Map the trait error to RizeError
-        type_: RizeErrorType::RegisterRead,
-        message: format!(
-            "Failed to read section '{}' from register {}: {}",
-            register.section, reg_name, e
-        ),
-    })?;
-
-    Ok(bits_to_u16(&bits))
-}
-
-/// Writes a u16 value to a register, respecting its current section setting.
-fn write_register_u16(
-    registers: &mut Registers,
-    reg_name: &str,
-    value: u16,
-) -> Result<(), RizeError> {
-    let register = get_register_mut(registers, reg_name)?;
-    match register.section {
-        'a' => register.store_immediate(value as usize),
-        'b' => {
-            let bits = u16_to_bits(value, CPU_BITTAGE / 2);
-            register.write_lower_half(bits)
-        }
-        'c' => {
-            let bits = u16_to_bits(value, CPU_BITTAGE / 4);
-            register.write_lower_quarter(bits)
-        }
-        'd' => {
-            let bits = u16_to_bits(value, CPU_BITTAGE / 8);
-            register.write_lower_eigth(bits)
-        }
-        _ => Err(RizeError {
-            type_: RizeErrorType::RegisterWrite,
-            message: format!(
-                "Invalid section '{}' found in register '{}' during write.",
-                register.section, reg_name
-            ),
-        }),
-    }
-}
-
-/// Converts a slice of bits (i8) into a u16, zero-extending if necessary.
-/// Assumes MSB is at index 0.
-fn bits_to_u16(bits: &[i8]) -> u16 {
-    let mut value: u16 = 0;
-    let len = bits.len();
-    let start_bit_index = CPU_BITTAGE.saturating_sub(len); // Target bit index in u16
-    debug!(
-        "bits_to_u16: input_len={}, start_idx={}, input_bits={:?}",
-        len, start_bit_index, bits
-    );
-
-    for (i, bit) in bits.iter().enumerate() {
-        if *bit == 1 {
-            let bit_pos = CPU_BITTAGE - 1 - (start_bit_index + i);
-            value |= 1 << bit_pos;
-        }
-    }
-    value
-}
-
-/// Converts the lower `num_bits` of a u16 into a Vec<i8>.
-/// MSB will be at index 0.
-fn u16_to_bits(value: u16, num_bits: usize) -> Vec<i8> {
-    let mut bits = vec![0i8; num_bits];
-    let start_bit_index_u16 = CPU_BITTAGE.saturating_sub(num_bits);
-    debug!(
-        "u16_to_bits: input_val=0x{:04X}, num_bits={}, start_idx_u16={}",
-        value, num_bits, start_bit_index_u16
-    );
-
-    for i in 0..num_bits {
-        // Corresponding bit index in the full u16 (from the left/MSB)
-        let u16_idx = start_bit_index_u16 + i;
-        // Bit position from the right (LSB=0) in the u16
-        let bit_pos_from_lsb = CPU_BITTAGE - 1 - u16_idx;
-
-        if (value >> bit_pos_from_lsb) & 1 == 1 {
-            bits[i] = 1;
-        }
-    }
-    debug!("u16_to_bits: output_bits={:?}", bits);
-    bits
-}
-
 /// Determines the value of an operand (Register, Immediate, or Memory Address).
 /// Reads section-aware for registers.
 fn get_operand_value(
@@ -647,8 +563,9 @@ fn get_operand_value(
 ) -> Result<u16, RizeError> {
     match arg {
         ArgType::Register(reg_name) => {
-            // Now uses the section-aware read
-            read_register_u16(registers, reg_name)
+            let register = get_register_mut(registers, reg_name)?;
+            // Use the new trait method
+            register.read_section_u16()
         }
         ArgType::Immediate(imm) => Ok(*imm),
         ArgType::MemAddr(addr) => {
@@ -684,8 +601,8 @@ fn determine_destination_register_mut<'a>(
             let reg_ref = get_register_mut(registers, reg3_name)?;
             Ok((reg_ref, reg3_name.clone()))
         }
-        // If arg3 is omitted, use arg1 (which must be a register)
-        None => {
+        // If arg3 is None or a comment, use arg1 (which must be a register)
+        None | Some(ArgType::None) => {
             if let ArgType::Register(reg1_name) = arg1 {
                 let reg_ref = get_register_mut(registers, reg1_name)?;
                 Ok((reg_ref, reg1_name.clone()))
@@ -711,12 +628,18 @@ fn determine_destination_register_mut<'a>(
 ///
 /// Rules apply in Order, returning the first match.
 ///
+/// 0) if starts with '#'       -> Comment (Ignore)
 /// 1) if only characters       -> Register
 /// 2) if starts with '0x'      -> MemAddr
 /// 3) if is entirely digits    -> Immediate
 /// 4) if starts with '.'       -> Symbol
 fn parse_arg(arg: &str) -> ArgType {
     if arg.is_empty() {
+        return ArgType::None;
+    }
+
+    // Rule 0: Comments
+    if arg.starts_with('#') {
         return ArgType::None;
     }
 
@@ -763,8 +686,9 @@ fn mov(
 
     match arg1 {
         ArgType::Register(dest_reg_name) => {
-            // TODO: Implement section-aware writing
-            write_register_u16(registers, dest_reg_name, source_value)
+            let register = get_register_mut(registers, dest_reg_name)?;
+            // Use the new trait method
+            register.write_section_u16(source_value)
         }
         ArgType::MemAddr(dest_addr) => {
             memory.write(*dest_addr, source_value) // write returns Result
@@ -783,27 +707,70 @@ fn add(
     arg3_opt: &Option<ArgType>,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    // Validate arg1 and arg2 are registers and get their values
-    let v1 = get_operand_value(registers, &Memory::new(), arg1)?; // Memory not needed here
+    // Validate arg1 is a register and get its value
+    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
     let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
 
-    if !matches!(arg1, ArgType::Register(_))
-        || !matches!(arg2, ArgType::Register(_))
-    {
+    // Ensure arg1 is a register (destination or source)
+    if !matches!(arg1, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "ADD requires register operands (arg1, arg2).".to_string(),
+            message: "ADD requires the first argument (arg1) to be a register."
+                .to_string(),
         });
     }
 
+    // Perform addition using wrapping arithmetic
     let result = v1.wrapping_add(v2);
 
     // Determine destination register using helper
     let (_dest_register, dest_name) =
         determine_destination_register_mut(registers, arg1, arg3_opt)?;
 
-    // Use section-aware write helper
-    write_register_u16(registers, &dest_name, result)
+    // --- Set Flags ---
+    // Zero Flag (fz): Set if result is 0
+    registers
+        .get(FLAG_ZERO)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_ZERO),
+        })?
+        .write_bool(result == 0)?;
+    // Negative Flag (fn): Set if MSB of result is 1
+    registers
+        .get(FLAG_NEGATIVE)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
+        })?
+        .write_bool(result & 0x8000 != 0)?; // Check MSB
+                                            // Carry Flag (fc): Set if unsigned addition resulted in carry
+    let carry = (v1 as u32 + v2 as u32) > 0xFFFF;
+    registers
+        .get(FLAG_CARRY)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_CARRY),
+        })?
+        .write_bool(carry)?;
+    // Overflow Flag (fo): Set if signed addition resulted in overflow
+    let v1_sign = (v1 >> 15) & 1;
+    let v2_sign = (v2 >> 15) & 1;
+    let result_sign = (result >> 15) & 1;
+    let overflow = (v1_sign == v2_sign) && (result_sign != v1_sign);
+    registers
+        .get(FLAG_OVERFLOW)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_OVERFLOW),
+        })?
+        .write_bool(overflow)?;
+    // --- End Set Flags ---
+
+    // Get register ref again (determine_... returns name now)
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
 }
 
 fn sub(
@@ -811,40 +778,89 @@ fn sub(
     arg2: &ArgType,
     arg3_opt: &Option<ArgType>,
     registers: &mut Registers,
+    r_memory: &Memory,
 ) -> Result<(), RizeError> {
-    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
-    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
+    // Validate arg1 is a register and get its value
+    let v1 = get_operand_value(registers, r_memory, arg1)?;
+    // Get the value of arg2 (can be Register or Immediate)
+    let v2 = get_operand_value(registers, r_memory, arg2)?;
 
-    if !matches!(arg1, ArgType::Register(_))
-        || !matches!(arg2, ArgType::Register(_))
-    {
+    // Ensure arg1 is a register (destination or source)
+    if !matches!(arg1, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "SUB requires register operands (arg1, arg2).".to_string(),
+            message: "SUB requires the first argument (arg1) to be a register."
+                .to_string(),
         });
     }
 
+    // Perform subtraction using wrapping arithmetic
     let result = v1.wrapping_sub(v2);
 
+    // Determine destination register using helper
     let (_dest_register, dest_name) =
         determine_destination_register_mut(registers, arg1, arg3_opt)?;
-    // Use section-aware write helper
-    write_register_u16(registers, &dest_name, result)
+
+    // --- Set Flags ---
+    // Zero Flag (fz): Set if result is 0
+    registers
+        .get(FLAG_ZERO)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_ZERO),
+        })?
+        .write_bool(result == 0)?;
+    // Negative Flag (fn): Set if MSB of result is 1
+    registers
+        .get(FLAG_NEGATIVE)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
+        })?
+        .write_bool(result & 0x8000 != 0)?; // Check MSB
+                                            // Carry Flag (fc): Set if unsigned subtraction resulted in borrow (v1 < v2)
+    let borrow = v1 < v2;
+    registers
+        .get(FLAG_CARRY) // Often called Borrow flag in subtraction context
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_CARRY),
+        })?
+        .write_bool(borrow)?;
+    // Overflow Flag (fo): Set if signed subtraction resulted in overflow
+    let v1_sign = (v1 >> 15) & 1;
+    let v2_sign = (v2 >> 15) & 1;
+    let result_sign = (result >> 15) & 1;
+    let overflow = (v1_sign != v2_sign) && (result_sign != v1_sign);
+    registers
+        .get(FLAG_OVERFLOW)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_OVERFLOW),
+        })?
+        .write_bool(overflow)?;
+    // --- End Set Flags ---
+
+    // Get register ref again
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
 }
 
 fn st(registers: &mut Registers, memory: &mut Memory) -> Result<(), RizeError> {
-    // TODO: Use section-aware reading if MAR/MDR can be partial?
-    let address = read_register_u16(registers, "mar")?;
-    let data = read_register_u16(registers, "mdr")?;
+    let address_reg = get_register_mut(registers, "mar")?;
+    let address = address_reg.read_section_u16()?;
+    let data_reg = get_register_mut(registers, "mdr")?;
+    let data = data_reg.read_section_u16()?;
     memory.write(address, data)
 }
 
 fn ld(registers: &mut Registers, memory: &Memory) -> Result<(), RizeError> {
-    // TODO: Use section-aware reading if MAR can be partial?
-    let address = read_register_u16(registers, "mar")?;
+    let address_reg = get_register_mut(registers, "mar")?;
+    let address = address_reg.read_section_u16()?;
     let data = memory.read(address)?;
-    // TODO: Use section-aware writing if MDR can be partial?
-    write_register_u16(registers, "mdr", data)
+    let data_reg = get_register_mut(registers, "mdr")?;
+    data_reg.write_section_u16(data)
 }
 
 fn and(
@@ -869,8 +885,10 @@ fn and(
 
     let (_dest_register, dest_name) =
         determine_destination_register_mut(registers, arg1, arg3_opt)?;
-    // Use section-aware write helper
-    write_register_u16(registers, &dest_name, result)
+    // Get register ref again
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
 }
 
 fn or(
@@ -895,8 +913,10 @@ fn or(
 
     let (_dest_register, dest_name) =
         determine_destination_register_mut(registers, arg1, arg3_opt)?;
-    // Use section-aware write helper
-    write_register_u16(registers, &dest_name, result)
+    // Get register ref again
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
 }
 
 fn xor(
@@ -921,17 +941,18 @@ fn xor(
 
     let (_dest_register, dest_name) =
         determine_destination_register_mut(registers, arg1, arg3_opt)?;
-    // Use section-aware write helper
-    write_register_u16(registers, &dest_name, result)
+    // Get register ref again
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
 }
 
 fn not(arg1: &ArgType, registers: &mut Registers) -> Result<(), RizeError> {
     if let ArgType::Register(reg_name) = arg1 {
-        // TODO: Use section-aware reading
-        let v1 = read_register_u16(registers, reg_name)?;
+        let register = get_register_mut(registers, reg_name)?;
+        let v1 = register.read_section_u16()?;
         let result = !v1;
-        // TODO: Use section-aware writing
-        write_register_u16(registers, reg_name, result)
+        register.write_section_u16(result)
     } else {
         Err(RizeError {
             type_: RizeErrorType::Execute,
@@ -958,11 +979,10 @@ fn shl(
             }
         };
 
-        // TODO: Use section-aware reading
-        let value = read_register_u16(registers, target_reg_name)?;
+        let target_register = get_register_mut(registers, target_reg_name)?;
+        let value = target_register.read_section_u16()?;
         let result = value << amount;
-        // TODO: Use section-aware writing
-        write_register_u16(registers, target_reg_name, result)
+        target_register.write_section_u16(result)
     } else {
         Err(RizeError {
             type_: RizeErrorType::Execute,
@@ -989,11 +1009,10 @@ fn shr(
             }
         };
 
-        // TODO: Use section-aware reading
-        let value = read_register_u16(registers, target_reg_name)?;
+        let target_register = get_register_mut(registers, target_reg_name)?;
+        let value = target_register.read_section_u16()?;
         let result = value >> amount;
-        // TODO: Use section-aware writing
-        write_register_u16(registers, target_reg_name, result)
+        target_register.write_section_u16(result)
     } else {
         Err(RizeError {
             type_: RizeErrorType::Execute,
@@ -1010,19 +1029,22 @@ fn wdm(
     registers: &mut Registers,
     memory: &Memory, // Added memory
 ) -> Result<(), RizeError> {
-    // TODO: Use section-aware reading for register args
-    let val1 = get_operand_value(registers, memory, arg1)?;
-    let val2 = get_operand_value(registers, memory, arg2)?;
-    let val3 = get_operand_value(registers, memory, arg3)?;
+    let val1: u16 = get_operand_value(registers, memory, arg1)?;
+    let val2: u16 = get_operand_value(registers, memory, arg2)?;
+    let val3: u16 = get_operand_value(registers, memory, arg3)?;
 
-    let red = (val1 >> 8) as u8;
-    let green = (val1 & 0xFF) as u8;
+    // info!("Val3: {:#016b}", val3);
 
-    let blue = (val2 >> 8) as u8;
-    let alpha = (val2 & 0xFF) as u8;
+    let red: u8 = (val1 >> 8) as u8;
+    let green: u8 = (val1 & 0xFF) as u8;
 
-    let x = (val3 >> 8) as u8;
-    let y = (val3 & 0xFF) as u8;
+    let blue: u8 = (val2 >> 8) as u8;
+    let alpha: u8 = (val2 & 0xFF) as u8;
+
+    let x: u8 = (val3 >> 8) as u8;
+    let y: u8 = (val3 & 0xFF) as u8;
+
+    // info(format!("x: {x}, y: {y}"));
 
     let color = [red, green, blue, alpha];
 

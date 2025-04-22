@@ -55,7 +55,7 @@ impl PixelDisplay {
         color: [u8; 4],
         mut r_images: &mut ResMut<Assets<Image>>,
     ) -> Result<(), RizeError> {
-        if x > DISPLAY_WIDTH - 1 || y > DISPLAY_HEIGHT - 1 {
+        if x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT {
             return Err(RizeError {
                 type_: RizeErrorType::Display,
                 message: format!("Coordinates ({}, {}) out of bounds", x, y),

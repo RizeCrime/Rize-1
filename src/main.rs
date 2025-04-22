@@ -118,5 +118,6 @@ pub enum CpuCycleStage {
     Fetch,
     Decode,
     Execute,
+    AutoStep,
     Halt,
 }

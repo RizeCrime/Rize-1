@@ -402,10 +402,25 @@ pub fn setup_ui_cpu_cycle_stage(
         ))
         .id();
 
+    let ui_auto_step_button = commands
+        .spawn((
+            Button,
+            Text::new("Enable Auto-Stepping"),
+            Name::new("ui-auto-step-button"),
+            TextLayout {
+                justify: JustifyText::Center,
+                ..Default::default()
+            },
+            create_random_border_color(),
+            UiElement,
+        ))
+        .id();
+
     commands.entity(ui_cpu_cycle_stage).add_children(&[
         ui_cpu_cycle_stage_text,
         ui_cpu_cycle_stage_value,
         ui_cpu_cycle_advance_button,
+        ui_auto_step_button,
     ]);
 }
 
@@ -517,6 +532,7 @@ pub fn update_cpu_cycle_stage(
             CpuCycleStage::Decode => "Decode",
             CpuCycleStage::Execute => "Execute",
             CpuCycleStage::Halt => "Halted",
+            CpuCycleStage::AutoStep => "Auto-Step",
         };
         if stage_text.0 != stage_name {
             stage_text.0 = stage_name.into();
@@ -531,27 +547,33 @@ pub fn update_cpu_cycle_stage(
             if !(*interaction == Interaction::Pressed) {
                 return;
             }
-            if !button_name.as_str().eq("ui-cpu-cycle-advance-button") {
+            if button_name.as_str().eq("ui-auto-step-button") {
+                s_next_stage.set(CpuCycleStage::AutoStep);
                 return;
             }
-
-            let current_stage: &CpuCycleStage = s_current_stage.get();
-            match current_stage {
-                CpuCycleStage::Startup => {
-                    s_next_stage.set(CpuCycleStage::Fetch);
+            if button_name.as_str().eq("ui-cpu-cycle-advance-button") {
+                let current_stage: &CpuCycleStage = s_current_stage.get();
+                match current_stage {
+                    CpuCycleStage::Startup => {
+                        s_next_stage.set(CpuCycleStage::Fetch);
+                    }
+                    CpuCycleStage::Fetch => {
+                        s_next_stage.set(CpuCycleStage::Decode);
+                    }
+                    CpuCycleStage::Decode => {
+                        s_next_stage.set(CpuCycleStage::Execute);
+                    }
+                    CpuCycleStage::Execute => {
+                        s_next_stage.set(CpuCycleStage::Fetch);
+                    }
+                    CpuCycleStage::Halt => {
+                        s_next_stage.set(CpuCycleStage::Startup);
+                    }
+                    CpuCycleStage::AutoStep => {
+                        s_next_stage.set(CpuCycleStage::Halt);
+                    }
                 }
-                CpuCycleStage::Fetch => {
-                    s_next_stage.set(CpuCycleStage::Decode);
-                }
-                CpuCycleStage::Decode => {
-                    s_next_stage.set(CpuCycleStage::Execute);
-                }
-                CpuCycleStage::Execute => {
-                    s_next_stage.set(CpuCycleStage::Fetch);
-                }
-                CpuCycleStage::Halt => {
-                    s_next_stage.set(CpuCycleStage::Startup);
-                }
+                return;
             }
         });
 }
@@ -559,6 +581,7 @@ pub fn update_cpu_cycle_stage(
 pub fn available_programs(
     r_programs: Res<AzmPrograms>,
     mut r_program: ResMut<ActiveProgram>,
+    mut r_registers: ResMut<Registers>,
     qe: Query<(Entity, &Name), With<UiElement>>,
     qi: Query<(&Interaction, &Name), (Changed<Interaction>, With<Button>)>,
     mut commands: Commands,
@@ -616,6 +639,14 @@ pub fn available_programs(
                 r_program.as_mut().file_stem = button_name.clone().into();
                 r_program.as_mut().contents =
                     std::io::read_to_string(&program_contents).unwrap();
+
+                // Reset Program Counter
+                r_program.as_mut().line = 0;
+                r_registers
+                    .get(PROGRAM_COUNTER)
+                    .unwrap()
+                    .store_immediate(0)
+                    .unwrap();
             }
         }
     });

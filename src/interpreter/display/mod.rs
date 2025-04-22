@@ -26,7 +26,8 @@ impl DisplayMemory {
         let mut pixels = [[[0; 4]; DISPLAY_WIDTH]; DISPLAY_HEIGHT];
         for x in 0..DISPLAY_WIDTH {
             for y in 0..DISPLAY_HEIGHT {
-                pixels[x][y] = [x as u8, 0u8, y as u8, 255u8];
+                pixels[x][y] =
+                    [(x + 100) as u8, 0u8 + 100u8, (y + 100) as u8, 255u8];
             }
         }
 
@@ -39,6 +40,27 @@ impl DisplayMemory {
         y: u8,
         color: [u8; 4],
     ) -> Result<(), RizeError> {
+        // Check X bounds
+        if (x as usize) >= DISPLAY_WIDTH {
+            return Err(RizeError {
+                type_: RizeErrorType::Display,
+                message: format!(
+                    "X coordinate {} out of bounds (width is {})",
+                    x, DISPLAY_WIDTH
+                ),
+            });
+        }
+        // Check Y bounds
+        if (y as usize) >= DISPLAY_HEIGHT {
+            return Err(RizeError {
+                type_: RizeErrorType::Display,
+                message: format!(
+                    "Y coordinate {} out of bounds (height is {})",
+                    y, DISPLAY_HEIGHT
+                ),
+            });
+        }
+
         self.pixels[x as usize][y as usize] = color;
         Ok(())
     }
