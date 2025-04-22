@@ -8,6 +8,10 @@ tags:
 
 ## Instruction Set Architecture (ISA)
 
+The Main Goal of this Project is to make a Learning Resource that I wish I had when I started learning Low-Level CPU stuff.  
+As such, Visualisation and Interactivity is the Focus, and Performance is Secondary.  
+For the Same Reason, some Limitations of x86asm are removed in order to improve the fun-to-be-had.
+
 ### Registers
 
 **Specific Purpose Registers**
@@ -48,7 +52,11 @@ tags:
 
 **General Purpose Registers**
 
-The amount of GPRs is undecided for now, but since this will purely be implemented as an Emulator, I should be able to add and/or remove as many as I want. I think, and hope :D
+The amount of GPRs is undecided for now, but since this will purely be implemented as an Emulator, I should be able to add and/or remove as many as I want. I think, and hope :D 
+
+Update:  
+The GPRs are set at Compile Time via a constant for now, but I'd like to add Metadata Support to the AZM files to specify how many GPRs a program needs.  
+This could then be used to create the appropriate amount of GPRs at runtime.  
 
 - General Purpose Registers Naming Scheme:
 	- 'x--' -> The Designation
@@ -68,23 +76,25 @@ The amount of GPRs is undecided for now, but since this will purely be implement
 
 ### Data Types
 
-- Native handling of 16-bit, 8-bit, and 4-bit Data
+- Native handling of 16-bit, 8-bit, 4-bit, and 2-bit Data
 	- achieved via subdivision of 16-bit Registers
 	- and ALU Operations
 - Floating Point Numbers are not planned for the MVP
 
 ### Instruction Formats
 
-Instructions are (8 + 16 + 16 + 16 =) 56 bits long and divided as shown:
+There is no specific Instruction Format (nor traditional Instruction Register for that Matter) for the Rize-1.  
+Arguments on the other hand are limited to 16 bits in length.  
 
-| 8 bits | 16 bits | 16 bits | 16 bits |
+| String | 16 bits | 16 bits | 16 bits |
 | ------ | ------- | ------- | ------- |
 | OPCODE | ARG1    | ARG2    | ARG3    |
 
-- ARG1 is the Target by Default
+- ARG1 is the Target Operand by Default (Results will be written into here)
 - ARG3 is Always Optional, unless Specified Otherwise (with a '\*' in Front)
 
 **Memory Related OPCODES**
+(This includes Registers)  
 
 | OPCODE | ARG1          | ARG2          | ARG3          |
 | ------ | ------------- | ------------- | ------------- |
