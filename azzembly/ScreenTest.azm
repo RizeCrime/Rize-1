@@ -1,0 +1,50 @@
+### Concepting:
+#   Pixel Coordinate Range:     0 - 31 
+#   Pixel Coordinate Target:    GCA 
+#   Pixel Coordinate Layout:    u16 split into 2 bytes
+#       First Byte:     X Coordinate
+#       Second Byte:    Y Coordinate
+#
+#   Coordinate Counting Loop:
+#       - Increment GCA by 1
+#       - If GCA is greater than 31: 
+#           - Set GCA to 0
+#           - Shift GCA Left by half (8)
+#       - If X > 31:
+#           - Break
+# 
+
+
+# Set Up Colors
+SUB GAA 1       # GAA = -1_i32 = 65535_u16 = 0b1111111111111111 
+
+MOV GCA 0       # Set Coords to 0
+
+.colorLoop
+WDM GAA GAA GCA # Write to Display Memory
+
+ADD GCA 1       # Increment Y Coordinate
+
+SUB GCB 32 GDA  # Set Zero Flag if GCA == 32
+MOV GDA FZ
+JIZ .yMax       # Jump to Reset Y if True
+
+JMP .colorLoop
+
+
+.yMax
+MOV GCB 0       # Reset Y Coordinate
+
+SHR GCA 8       # GCA now Holds X where Y usually is
+ADD GCA 1       # Increment X Coordinate
+
+SUB GCA 32 GDA  # Set Zero Flag if X == 32
+MOV GDA FZ
+JIZ .exit       # Exit if True
+
+SHL GCA 8       # Put X Back in the Upper Byte 
+
+JMP .colorLoop
+
+.exit 
+HALT
