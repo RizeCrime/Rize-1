@@ -19,6 +19,11 @@ Rize-1 is an educational project designed to help beginners learn about CPU arch
 - Register-based architecture with clearly defined purpose registers
 - Simplified instruction formats for better learning
 
+## Future Plans
+
+- Support Interpreter 'Kernels' that can be chosen to Interpret Real-World Assembly for different Architectures
+- Launching from CMD with .azm File as Argument should ideally automatically Load the Program
+
 ## Getting Started
 
 *Coming soon*
