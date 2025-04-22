@@ -29,6 +29,10 @@ For more detailed information about the project:
 - [Design Documentation](DesignDoc.md) - Detailed information about the ISA, registers, and instruction formats
 - [Style Guide](StyleGuide.md) - Coding principles and guidelines for contributors
 
+## Disclaimer 
+I have written exactly **one** Bevy App before this, and I didn't finish it.  
+Abandon All Hope, Ye Who Enter Here!
+
 ## License
 
 This project is licensed under Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
