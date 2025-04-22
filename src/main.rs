@@ -42,6 +42,8 @@ mod components;
 pub use components::*;
 
 mod interpreter;
+pub use interpreter::*;
+
 mod ui;
 
 fn main() {

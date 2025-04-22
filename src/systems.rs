@@ -16,9 +16,6 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
 
     r_registers
         .as_mut()
-        .insert(INSTRUCTION_REGISTER.into(), instruction_register);
-    r_registers
-        .as_mut()
         .insert(PROGRAM_COUNTER.into(), program_counter);
     r_registers
         .as_mut()

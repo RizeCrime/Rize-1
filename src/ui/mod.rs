@@ -5,21 +5,26 @@ use crate::*;
 mod systems;
 use systems::*;
 
-mod components;
-pub use components::*;
+mod types;
+pub use types::*;
 
 pub struct RizeOneUi;
 
 impl Plugin for RizeOneUi {
     fn build(&self, app: &mut App) {
+        app.register_type::<UiRoot>();
+        app.register_type::<UiElement>();
+        app.register_type::<UiText>();
+        app.register_type::<UiRegister>();
+        app.register_type::<UiBit>();
+
         app.add_systems(
             Startup,
             (
                 setup_ui_root,
                 (
-                    setup_gp_registers,
-                    setup_core_registers,
-                    setup_ui_cpu_cycle_stage,
+                    setup_ui_registers,
+                    setup_control_panel,
                     setup_available_programs,
                     setup_instruction_ui,
                     setup_display,
@@ -31,10 +36,10 @@ impl Plugin for RizeOneUi {
         app.add_systems(
             Update,
             (
-                update_cpu_cycle_stage,
-                available_programs,
                 update_registers,
                 update_register_parsed,
+                update_cpu_cycle_stage,
+                available_programs,
                 update_instruction_ui,
                 update_display,
             ),

@@ -13,7 +13,6 @@ pub const AZZEMBLY_DIR: &str = "azzembly/";
 
 // Registers
 pub const PROGRAM_COUNTER: &str = "pc";
-pub const INSTRUCTION_REGISTER: &str = "ir";
 pub const FLAG_ZERO: &str = "fz";
 pub const FLAG_NEGATIVE: &str = "fn";
 pub const FLAG_CARRY: &str = "fc";
