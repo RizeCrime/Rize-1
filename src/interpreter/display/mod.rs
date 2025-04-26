@@ -9,6 +9,8 @@ impl Plugin for RizeOneDisplay {
     fn build(&self, app: &mut App) {
         app.insert_resource(DisplayMemory::init());
         app.register_type::<Display>();
+
+        app.add_systems(OnEnter(CpuCycleStage::Startup), reset_display);
     }
 }
 
@@ -79,4 +81,8 @@ impl DisplayMemory {
             })
             .map(|pixel| *pixel)
     }
+}
+
+pub fn reset_display(mut r_display: ResMut<DisplayMemory>) {
+    r_display.pixels = DisplayMemory::init().pixels;
 }

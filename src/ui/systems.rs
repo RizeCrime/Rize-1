@@ -278,6 +278,25 @@ pub fn setup_control_panel(
         .entity(control_panel)
         .add_children(&[cpu_container, button_container]);
 
+    let reset_button = commands
+        .spawn((
+            Button,
+            NodeBuilder::row()
+                .width(Val::Percent(100.0))
+                .justify_content(JustifyContent::SpaceAround)
+                .gap(8.0)
+                .border(UiRect::all(Val::Px(2.0)))
+                .build(),
+            border_color(None),
+            Name::new("ui-reset-button"),
+        ))
+        .with_child((
+            Text::new("Reset"),
+            TextLayout::new_with_justify(JustifyText::Center),
+            UiText,
+        ))
+        .id();
+
     let advance_button = commands
         .spawn((
             Button,
@@ -313,9 +332,11 @@ pub fn setup_control_panel(
         .with_child((Text::new("Auto-Step"),))
         .id();
 
-    commands
-        .entity(button_container)
-        .add_children(&[advance_button, autostep_button]);
+    commands.entity(button_container).add_children(&[
+        reset_button,
+        advance_button,
+        autostep_button,
+    ]);
 }
 
 pub fn setup_available_programs(
@@ -416,7 +437,7 @@ pub fn setup_display(
 /// Update Systems ///
 /// -------------- ///
 
-pub fn update_cpu_cycle_stage(
+pub fn update_control_panel(
     s_current_stage: Res<State<CpuCycleStage>>,
     mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
     q_advance_button: Query<
@@ -451,6 +472,10 @@ pub fn update_cpu_cycle_stage(
             if !(*interaction == Interaction::Pressed) {
                 return;
             }
+            if button_name.as_str().eq("ui-reset-button") {
+                s_next_stage.set(CpuCycleStage::Startup);
+                return;
+            }
             if button_name.as_str().eq("ui-autostep-button") {
                 match s_current_stage.get() {
                     CpuCycleStage::AutoStep => {
@@ -478,10 +503,10 @@ pub fn update_cpu_cycle_stage(
                         s_next_stage.set(CpuCycleStage::Fetch);
                     }
                     CpuCycleStage::Halt => {
-                        s_next_stage.set(CpuCycleStage::Startup);
+                        s_next_stage.set(CpuCycleStage::Fetch);
                     }
                     CpuCycleStage::AutoStep => {
-                        s_next_stage.set(CpuCycleStage::Halt);
+                        s_next_stage.set(CpuCycleStage::Fetch);
                     }
                 }
                 return;
