@@ -10,6 +10,7 @@ pub const MEMORY_SIZE_BYTES: usize = 2048;
 pub const DISPLAY_WIDTH: usize = 32;
 pub const DISPLAY_HEIGHT: usize = 32;
 pub const AZZEMBLY_DIR: &str = "azzembly/";
+pub const AUTOSTEP_LINES_PER_FRAME: usize = 10;
 
 // Registers
 pub const PROGRAM_COUNTER: &str = "pc";

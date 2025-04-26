@@ -23,6 +23,7 @@ pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
 #[reflect(Resource, InspectorOptions)]
 pub struct ActiveProgram {
     pub auto_step: bool,
+    pub autostep_lines: usize,
     pub path: PathBuf,
     pub file_stem: String,
     pub contents: String,
@@ -64,7 +65,10 @@ pub struct RizeOneInterpreter;
 impl Plugin for RizeOneInterpreter {
     fn build(&self, app: &mut App) {
         app.insert_resource(AzmPrograms::default());
-        app.insert_resource(ActiveProgram::default());
+        app.insert_resource(ActiveProgram {
+            autostep_lines: AUTOSTEP_LINES_PER_FRAME,
+            ..Default::default()
+        });
         app.insert_resource(FileCheckTimer(Timer::from_seconds(
             0.25,
             TimerMode::Repeating,
@@ -88,10 +92,38 @@ impl Plugin for RizeOneInterpreter {
         // add systems as Update, for auto-stepping
         app.add_systems(
             Update,
-            (fetch, decode, execute)
-                .chain()
-                .run_if(in_state(CpuCycleStage::AutoStep)),
+            // (fetch, decode, execute)
+            // .chain()
+            (auto_step).run_if(in_state(CpuCycleStage::AutoStep)),
         );
+    }
+}
+
+pub fn auto_step(
+    mut r_active_program: ResMut<ActiveProgram>,
+    mut r_registers: ResMut<Registers>,
+    mut r_memory: ResMut<Memory>,
+    mut r_display_memory: ResMut<DisplayMemory>,
+    r_images: Res<Assets<Image>>,
+    mut s_cpu_next: ResMut<NextState<CpuCycleStage>>,
+) {
+    for _ in 0..r_active_program.autostep_lines {
+        unsafe {
+            fetch(
+                std::mem::transmute_copy(&r_active_program),
+                std::mem::transmute_copy(&s_cpu_next),
+                std::mem::transmute_copy(&r_registers),
+            );
+            decode(std::mem::transmute_copy(&r_active_program));
+            execute(
+                std::mem::transmute_copy(&r_active_program),
+                std::mem::transmute_copy(&r_registers),
+                std::mem::transmute_copy(&r_memory),
+                std::mem::transmute_copy(&s_cpu_next),
+                std::mem::transmute_copy(&r_display_memory),
+                std::mem::transmute_copy(&r_images),
+            );
+        }
     }
 }
 
