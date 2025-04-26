@@ -8,7 +8,6 @@ use bevy::prelude::*;
 use bevy::tasks::futures_lite::stream::Pending;
 use bevy::utils::info;
 use bevy_inspector_egui::prelude::*;
-use display::RizeOneDisplay;
 
 use super::*;
 use crate::*;
@@ -333,6 +332,34 @@ pub fn execute(
                 Some(program.arg3.parsed.clone())
             };
             sub(
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
+                registers,
+                &r_memory,
+            )
+        }
+        OpCode::MUL => {
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            mul(
+                &program.arg1.parsed,
+                &program.arg2.parsed,
+                &arg3_option,
+                registers,
+                &r_memory,
+            )
+        }
+        OpCode::DIV => {
+            let arg3_option = if program.arg3.raw.is_empty() {
+                None
+            } else {
+                Some(program.arg3.parsed.clone())
+            };
+            div(
                 &program.arg1.parsed,
                 &program.arg2.parsed,
                 &arg3_option,
@@ -1049,4 +1076,161 @@ fn wdm(
     let color = [red, green, blue, alpha];
 
     r_display_memory.set_pixel(x, y, color)
+}
+
+fn mul(
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
+    r_memory: &Memory,
+) -> Result<(), RizeError> {
+    // Validate arg1 is a register and get its value
+    let v1 = get_operand_value(registers, r_memory, arg1)?;
+    // Get the value of arg2 (can be Register or Immediate)
+    let v2 = get_operand_value(registers, r_memory, arg2)?;
+
+    // Ensure arg1 is a register (destination or source)
+    if !matches!(arg1, ArgType::Register(_)) {
+        return Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "MUL requires the first argument (arg1) to be a register."
+                .to_string(),
+        });
+    }
+
+    // Perform multiplication using wrapping arithmetic
+    let result = v1.wrapping_mul(v2);
+
+    // Determine destination register using helper
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+
+    // --- Set Flags ---
+    // Zero Flag (fz): Set if result is 0
+    registers
+        .get(FLAG_ZERO)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_ZERO),
+        })?
+        .write_bool(result == 0)?;
+    // Negative Flag (fn): Set if MSB of result is 1
+    registers
+        .get(FLAG_NEGATIVE)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
+        })?
+        .write_bool(result & 0x8000 != 0)?; // Check MSB
+                                            // Carry Flag (fc): Set if the product exceeds 16 bits
+    let carry = (v1 as u32 * v2 as u32) > 0xFFFF;
+    registers
+        .get(FLAG_CARRY)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_CARRY),
+        })?
+        .write_bool(carry)?;
+    // Overflow Flag (fo): Set if signed multiplication resulted in overflow
+    // Overflow occurs when the result cannot be correctly represented in 16 bits
+    let v1_signed = v1 as i16;
+    let v2_signed = v2 as i16;
+    let result_i32 = v1_signed as i32 * v2_signed as i32;
+    let overflow = result_i32 < i16::MIN as i32 || result_i32 > i16::MAX as i32;
+    registers
+        .get(FLAG_OVERFLOW)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_OVERFLOW),
+        })?
+        .write_bool(overflow)?;
+    // --- End Set Flags ---
+
+    // Get register ref again
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
+}
+
+fn div(
+    arg1: &ArgType,
+    arg2: &ArgType,
+    arg3_opt: &Option<ArgType>,
+    registers: &mut Registers,
+    r_memory: &Memory,
+) -> Result<(), RizeError> {
+    // Validate arg1 is a register and get its value
+    let v1 = get_operand_value(registers, r_memory, arg1)?;
+    // Get the value of arg2 (can be Register or Immediate)
+    let v2 = get_operand_value(registers, r_memory, arg2)?;
+
+    // Ensure arg1 is a register (destination or source)
+    if !matches!(arg1, ArgType::Register(_)) {
+        return Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "DIV requires the first argument (arg1) to be a register."
+                .to_string(),
+        });
+    }
+
+    // Check for division by zero
+    if v2 == 0 {
+        return Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "Division by zero".to_string(),
+        });
+    }
+
+    // Perform division
+    let result = v1.wrapping_div(v2);
+
+    // Determine destination register using helper
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+
+    // --- Set Flags ---
+    // Zero Flag (fz): Set if result is 0
+    registers
+        .get(FLAG_ZERO)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_ZERO),
+        })?
+        .write_bool(result == 0)?;
+    // Negative Flag (fn): Set if MSB of result is 1
+    registers
+        .get(FLAG_NEGATIVE)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
+        })?
+        .write_bool(result & 0x8000 != 0)?; // Check MSB
+                                            // Carry Flag (fc): Set if there is a remainder
+    let remainder = v1 % v2;
+    registers
+        .get(FLAG_CARRY)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_CARRY),
+        })?
+        .write_bool(remainder != 0)?;
+    // Overflow Flag (fo): Set if signed division resulted in overflow
+    // Overflow can only occur in signed division when dividing INT_MIN by -1
+    let v1_signed = v1 as i16;
+    let v2_signed = v2 as i16;
+    let overflow = v1_signed == i16::MIN && v2_signed == -1;
+    registers
+        .get(FLAG_OVERFLOW)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: format!("Flag register '{}' not found", FLAG_OVERFLOW),
+        })?
+        .write_bool(overflow)?;
+    // --- End Set Flags ---
+
+    // Get register ref again
+    let dest_register = get_register_mut(registers, &dest_name)?;
+    // Use section-aware trait method
+    dest_register.write_section_u16(result)
 }
