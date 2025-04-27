@@ -47,5 +47,5 @@ JMP .colorLoop
 
 .reset 
 MOV GCA 0       # Reset Coordinates
-SUB GAA 8       # Decrement Color
+SUB GAA 16      # Decrement Color
 JMP .colorLoop
