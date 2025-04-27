@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::{ffi::OsStr, path::PathBuf};
 
 use bevy::image::{ImageSampler, ImageSamplerDescriptor};
+use bevy::render::view::visibility;
+use bevy_simple_text_input::{TextInputSettings, TextInputSubmitEvent};
 use rand::Rng;
 use FlexDirection::*;
 
@@ -263,6 +265,17 @@ pub fn setup_control_panel(
         ))
         .id();
 
+    let config_container = commands
+        .spawn((
+            NodeBuilder::panel()
+                .width(Val::Percent(100.0))
+                .gap(8.0)
+                .build(),
+            Name::new("control-panel-config"),
+        ))
+        .with_child((Text::new("Autostep Lines/Frame:"), UiText))
+        .id();
+
     let button_container = commands
         .spawn((
             NodeBuilder::panel()
@@ -274,9 +287,58 @@ pub fn setup_control_panel(
         ))
         .id();
 
+    commands.entity(control_panel).add_children(&[
+        cpu_container,
+        config_container,
+        button_container,
+    ]);
+
+    // ------ //
+    // Config //
+    // ------ //
+
+    let autostep_button = commands
+        .spawn((
+            Button,
+            NodeBuilder::new()
+                .width(Val::Percent(100.0))
+                .border(UiRect::all(Val::Px(2.0)))
+                .build(),
+            Name::new("ui-autostep-lines-button"),
+            Visibility::Visible,
+            TogglePart,
+        ))
+        .with_child((
+            Text::new(""),
+            NodeBuilder::new().width(Val::Percent(100.0)).build(),
+            TextLayout::new_with_justify(JustifyText::Center),
+            Name::new("ui-autostep-lines-text"),
+            UiText,
+        ))
+        .id();
+
+    let autostep_input = commands
+        .spawn((
+            TextInput,
+            NodeBuilder::new()
+                .width(Val::Percent(100.0))
+                .border(UiRect::all(Val::Px(2.0)))
+                .justify_content(JustifyContent::Center)
+                .build(),
+            border_color(None),
+            Name::new("ui-autostep-lines-input"),
+            Visibility::Hidden,
+            TogglePart,
+        ))
+        .id();
+
     commands
-        .entity(control_panel)
-        .add_children(&[cpu_container, button_container]);
+        .entity(config_container)
+        .add_children(&[autostep_button, autostep_input]);
+
+    // ------- //
+    // Buttons //
+    // ------- //
 
     let reset_button = commands
         .spawn((
@@ -438,80 +500,134 @@ pub fn setup_display(
 /// -------------- ///
 
 pub fn update_control_panel(
+    mut r_active_program: ResMut<ActiveProgram>,
     s_current_stage: Res<State<CpuCycleStage>>,
     mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
-    q_advance_button: Query<
+    q_button: Query<
         (&Interaction, &Name),
         (Changed<Interaction>, With<Button>),
     >,
-    mut q_stage_text: Query<(&mut Text, &Name), With<UiText>>,
+    mut q_text: Query<(&mut Text, &Name), With<UiText>>,
+    mut q_autostep: Query<(Entity, &mut Visibility, &Name), With<TogglePart>>,
+    mut er_input_submit: EventReader<TextInputSubmitEvent>,
 ) {
-    if let Some((mut stage_text, _)) = q_stage_text
-        .iter_mut()
-        .find(|(_, name)| name.as_str() == "ui-cpu-cycle-stage")
-    {
-        let current_stage_value: &CpuCycleStage = s_current_stage.get();
-        let stage_name = match current_stage_value {
-            CpuCycleStage::Startup => "Startup",
-            CpuCycleStage::Fetch => "Fetch",
-            CpuCycleStage::Decode => "Decode",
-            CpuCycleStage::Execute => "Execute",
-            CpuCycleStage::Halt => "Halted",
-            CpuCycleStage::AutoStep => "Auto-Step",
-        };
-        if stage_text.0 != stage_name {
-            stage_text.0 = stage_name.into();
+    // Update Text (Every Frame)
+    q_text.iter_mut().for_each(|(mut text, name)| {
+        if name.as_str() == "ui-cpu-cycle-stage" {
+            text.0 = match s_current_stage.get() {
+                CpuCycleStage::Startup => "Startup",
+                CpuCycleStage::Fetch => "Fetch",
+                CpuCycleStage::Decode => "Decode",
+                CpuCycleStage::Execute => "Execute",
+                CpuCycleStage::Halt => "Halted",
+                CpuCycleStage::AutoStep => "Auto-Step",
+            }
+            .into();
         }
-    } else {
-        warn!("Failed to find ui-cpu-cycle-stage text element.");
-    }
+        if name.as_str() == "ui-autostep-lines-text" {
+            text.0 = r_active_program.autostep_lines.to_string();
+        }
+    });
 
-    q_advance_button
+    // Handle Button Presses (As Needed)
+    let mut autostep_button: Option<Entity> = None;
+    let mut autostep_input: Option<Entity> = None;
+    q_autostep
         .iter()
-        .for_each(|(interaction, button_name)| {
-            if !(*interaction == Interaction::Pressed) {
-                return;
+        .for_each(|(entity, _, name)| match name.as_str() {
+            "ui-autostep-lines-button" => {
+                autostep_button = Some(entity);
             }
-            if button_name.as_str().eq("ui-reset-button") {
-                s_next_stage.set(CpuCycleStage::Startup);
-                return;
+            "ui-autostep-lines-input" => {
+                autostep_input = Some(entity);
             }
-            if button_name.as_str().eq("ui-autostep-button") {
-                match s_current_stage.get() {
-                    CpuCycleStage::AutoStep => {
-                        s_next_stage.set(CpuCycleStage::Halt);
-                    }
-                    _ => {
-                        s_next_stage.set(CpuCycleStage::AutoStep);
-                    }
-                }
-                return;
-            }
-            if button_name.as_str().eq("ui-advance-cpu-button") {
-                let current_stage: &CpuCycleStage = s_current_stage.get();
-                match current_stage {
-                    CpuCycleStage::Startup => {
-                        s_next_stage.set(CpuCycleStage::Fetch);
-                    }
-                    CpuCycleStage::Fetch => {
-                        s_next_stage.set(CpuCycleStage::Decode);
-                    }
-                    CpuCycleStage::Decode => {
-                        s_next_stage.set(CpuCycleStage::Execute);
-                    }
-                    CpuCycleStage::Execute => {
-                        s_next_stage.set(CpuCycleStage::Fetch);
-                    }
-                    CpuCycleStage::Halt => {
-                        s_next_stage.set(CpuCycleStage::Fetch);
-                    }
-                    CpuCycleStage::AutoStep => {
-                        s_next_stage.set(CpuCycleStage::Fetch);
-                    }
-                }
-                return;
+            _ => {
+                todo!()
             }
         });
+
+    q_button.iter().for_each(|(interaction, button_name)| {
+        if *interaction != Interaction::Pressed {
+            return;
+        }
+        if button_name.as_str().eq("ui-autostep-lines-button") {
+            if autostep_button.is_some() || autostep_input.is_some() {
+
+                let [(b_entity, mut b_visibility, b_name), (i_entity, mut i_visibility, i_name)] =
+                    q_autostep
+                        .get_many_mut([
+                            autostep_button.unwrap(),
+                            autostep_input.unwrap(),
+                        ])
+                        .unwrap();
+
+                *b_visibility = Visibility::Hidden;
+                *i_visibility = Visibility::Visible;
+            }
+        }
+        if button_name.as_str().eq("ui-reset-button") {
+            s_next_stage.set(CpuCycleStage::Startup);
+            return;
+        }
+        if button_name.as_str().eq("ui-autostep-button") {
+            match s_current_stage.get() {
+                CpuCycleStage::AutoStep => {
+                    s_next_stage.set(CpuCycleStage::Halt);
+                }
+                _ => {
+                    s_next_stage.set(CpuCycleStage::AutoStep);
+                }
+            }
+            return;
+        }
+        if button_name.as_str().eq("ui-advance-cpu-button") {
+            let current_stage: &CpuCycleStage = s_current_stage.get();
+            match current_stage {
+                CpuCycleStage::Startup => {
+                    s_next_stage.set(CpuCycleStage::Fetch);
+                }
+                CpuCycleStage::Fetch => {
+                    s_next_stage.set(CpuCycleStage::Decode);
+                }
+                CpuCycleStage::Decode => {
+                    s_next_stage.set(CpuCycleStage::Execute);
+                }
+                CpuCycleStage::Execute => {
+                    s_next_stage.set(CpuCycleStage::Fetch);
+                }
+                CpuCycleStage::Halt => {
+                    s_next_stage.set(CpuCycleStage::Fetch);
+                }
+                CpuCycleStage::AutoStep => {
+                    s_next_stage.set(CpuCycleStage::Fetch);
+                }
+            }
+            return;
+        }
+    });
+
+    // Handle Config Changes (As Needed)
+
+    er_input_submit.read().for_each(|event| {
+        if event.entity == autostep_input.unwrap() {
+            let [
+                (b_entity, mut b_visibility, b_name),
+                (i_entity, mut i_visibility, i_name),
+            ] = q_autostep
+                .get_many_mut([
+                    autostep_button.unwrap(),
+                    autostep_input.unwrap(),
+                ])
+                .unwrap();
+
+            if let Ok(value) = event.value.parse::<usize>() {
+                r_active_program.autostep_lines = value;
+            }
+
+            *b_visibility = Visibility::Visible;
+            *i_visibility = Visibility::Hidden;
+        }
+    });
 }
 
 pub fn available_programs(

@@ -14,16 +14,18 @@ use bevy::{
     window::{PresentMode, WindowResolution},
 };
 
+use bevy_simple_text_input::{TextInput, TextInputPlugin};
+
 // use bevy_egui::EguiPlugin;
 // use bevy_mod_picking::DefaultPickingPlugins;
 
-#[cfg(feature = "inspector")]
+#[cfg(debug_assertions)]
 use bevy_inspector_egui::quick::{
     ResourceInspectorPlugin, StateInspectorPlugin, WorldInspectorPlugin,
 };
-#[cfg(feature = "inspector")]
+#[cfg(debug_assertions)]
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-#[cfg(feature = "inspector")]
+#[cfg(debug_assertions)]
 use bevy_screen_diagnostics::{
     ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin,
     ScreenFrameDiagnosticsPlugin,
@@ -82,6 +84,8 @@ fn main() {
         ScreenFrameDiagnosticsPlugin,
         ScreenEntityDiagnosticsPlugin,
     ));
+
+    bevy_app.add_plugins(TextInputPlugin);
 
     bevy_app.add_plugins(RizeOne);
 

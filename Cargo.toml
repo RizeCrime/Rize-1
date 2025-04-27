@@ -9,6 +9,7 @@ bevy = { version = "0.15.*", features = ["dynamic_linking"] }
 # bevy = { version = "0.15.*" }
 bevy-inspector-egui = { version = "0.30.0", optional = true }
 bevy_screen_diagnostics = { git = "https://github.com/mlupo19/bevy_screen_diagnostics", branch = "personal/0.15" }
+bevy_simple_text_input = "0.10"
 rand = "0.9.0"
 
 [profile.dev]

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_simple_text_input::TextInputSystem;
 
 use crate::*;
 
@@ -38,10 +39,11 @@ impl Plugin for RizeOneUi {
             (
                 update_registers,
                 update_register_parsed,
-                update_control_panel,
+                // update_control_panel,
                 available_programs,
                 update_instruction_ui,
                 update_display,
+                (update_control_panel).after(TextInputSystem),
             ),
         );
     }

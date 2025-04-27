@@ -26,6 +26,9 @@ impl UiRoot {
 }
 
 #[derive(Component, Reflect, Default)]
+pub struct TogglePart;
+
+#[derive(Component, Reflect, Default)]
 pub struct UiRegister;
 
 #[derive(Component, Reflect, Default)]
