@@ -22,29 +22,30 @@ pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
 #[derive(Resource, Default, Reflect, InspectorOptions)]
 #[reflect(Resource, InspectorOptions)]
 pub struct ActiveProgram {
-    pub auto_step: bool,
-    pub autostep_lines: usize,
-    pub path: PathBuf,
-    pub file_stem: String,
     pub contents: String,
-    pub line: usize,
     pub symbols: HashMap<String, usize>,
-    pub raw_opcode: String,
+    pub raw: String,
     pub opcode: OpCode,
-    pub arg1: ProgramArg,
-    pub arg2: ProgramArg,
-    pub arg3: ProgramArg,
+    pub arg1: ArgType,
+    pub arg2: ArgType,
+    pub arg3: ArgType,
+}
+
+#[derive(Resource, Default, Reflect, InspectorOptions)]
+#[reflect(Resource, InspectorOptions)]
+pub struct ProgramSettings {
+    pub autostep: bool,
+    pub autostep_lines: usize,
 }
 
 #[derive(Resource, Default, Reflect, InspectorOptions)]
 #[reflect(Resource, InspectorOptions)]
 pub struct ProgramArg {
-    pub raw: String,
     pub parsed: ArgType,
 }
 
 #[derive(
-    Resource, Default, Reflect, InspectorOptions, Clone, Eq, PartialEq,
+    Resource, Default, Reflect, InspectorOptions, Clone, Eq, PartialEq, Debug,
 )]
 #[reflect(Resource, InspectorOptions)]
 pub enum ArgType {
@@ -57,6 +58,68 @@ pub enum ArgType {
     Symbol(String),
 }
 
+impl ArgType {
+    pub fn store_immediate(
+        &self,
+        mut registers: Option<&mut Registers>,
+        mut memory: Option<&mut Memory>,
+        address: Option<u16>,
+        val: usize,
+    ) -> Result<(), RizeError> {
+        match self {
+            ArgType::Register(reg_name) => {
+                let register = registers.unwrap().get(&reg_name).unwrap();
+                register.store_immediate(val as usize)
+            }
+            ArgType::MemAddr(mem_addr) => {
+                let mem = memory.unwrap();
+                mem.write(address.unwrap() as u16, val as u16)
+            }
+            _ => {
+                unreachable!()
+            }
+        }
+    }
+    /// ### Returns
+    /// Result<(result: usize, current: usize), RizeError>  
+    /// where 'current' is the Value of Arg1, before the operation.  
+    pub fn add(
+        &self, 
+        mut registers: Option<&mut Registers>, 
+        mut memory: Option<&mut Memory>,
+        val: usize,
+        target: Option<&ArgType>,
+    ) -> Result<(usize, usize), RizeError> {
+
+        match self {
+            ArgType::Register(reg_name) => {
+
+                let target: &mut Register = match target {
+                    Some(ArgType::Register(reg_name)) => {
+                        registers.unwrap().get(&reg_name).unwrap()
+                    }
+                    _ => {
+                        registers.unwrap().get(reg_name).unwrap()
+                    }
+                };
+                let current: usize = target.read_u16().unwrap() as usize;
+                
+                let result: usize = current.wrapping_add(val);
+                target.store_immediate(result)?;
+                
+                return Ok((result, current));
+            }
+            ArgType::MemAddr(mem_addr) => {
+                error!("ADD target (arg1) must be a Register.");
+            }
+            _ => {
+                unreachable!()
+            }
+        }
+        unreachable!()
+    }
+}
+
 #[derive(Resource)]
 pub struct FileCheckTimer(Timer);
 
@@ -66,9 +129,9 @@ impl Plugin for RizeOneInterpreter {
     fn build(&self, app: &mut App) {
         app.insert_resource(AzmPrograms::default());
         app.insert_resource(ActiveProgram {
-            autostep_lines: AUTOSTEP_LINES_PER_FRAME,
             ..Default::default()
         });
+        app.insert_resource(ProgramSettings::default());
         app.insert_resource(FileCheckTimer(Timer::from_seconds(
             0.25,
             TimerMode::Repeating,
@@ -100,6 +163,8 @@ impl Plugin for RizeOneInterpreter {
 }
 
 pub fn auto_step(
+    mut commands: Commands,
+    r_program_settings: Res<ProgramSettings>,
     mut r_active_program: ResMut<ActiveProgram>,
     mut r_registers: ResMut<Registers>,
     mut r_memory: ResMut<Memory>,
@@ -107,7 +172,7 @@ pub fn auto_step(
     r_images: Res<Assets<Image>>,
     mut s_cpu_next: ResMut<NextState<CpuCycleStage>>,
 ) {
-    for _ in 0..r_active_program.autostep_lines {
+    for _ in 0..r_program_settings.autostep_lines {
         unsafe {
             fetch(
                 std::mem::transmute_copy(&r_active_program),
@@ -125,16 +190,6 @@ pub fn auto_step(
             );
         }
     }
-}
-
-pub fn update_program_counter(
-    r_program: Res<ActiveProgram>,
-    mut r_registers: ResMut<Registers>,
-) {
-    let pc: &mut Register = r_registers.get("pc").unwrap();
-    let value: usize = r_program.line;
-
-    pc.store_immediate(value).unwrap();
 }
 
 pub fn check_azm_programs(
@@ -195,9 +250,9 @@ pub fn check_azm_programs(
 pub fn tick_cpu(
     s_current_stage: Res<State<CpuCycleStage>>,
     mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
-    mut r_program: ResMut<ActiveProgram>,
+    mut r_program_settings: ResMut<ProgramSettings>,
 ) {
-    if !r_program.auto_step {
+    if !r_program_settings.autostep {
         return;
     }
 
@@ -213,7 +268,7 @@ pub fn tick_cpu(
         }
         CpuCycleStage::Halt => {
             s_next_stage.set(CpuCycleStage::Halt);
-            r_program.auto_step = false;
+            r_program_settings.autostep = false;
         }
         _ => {}
     }
@@ -232,11 +287,14 @@ pub fn fetch(
     // load the current program counter value into lines to operate on,
     // in case the user overwrote the pc register manually.
     // not the most elegant solution; but hey it should work?
-    let pc: &mut Register = r_registers.get(PROGRAM_COUNTER).unwrap();
-    program.line = pc.read_u16().unwrap() as usize;
+    let mut pc: &mut Register = r_registers.get(PROGRAM_COUNTER).unwrap();
+    let pc_val: u16 = pc.read_u16().unwrap();
 
     // Create an iterator starting from the current line
-    let mut lines_iter = program.contents.lines().skip(program.line);
+    let mut lines_iter = program
+        .contents
+        .lines()
+        .skip(pc.read_u16().unwrap() as usize);
 
     loop {
         if let Some(line_str) = lines_iter.next() {
@@ -247,43 +305,21 @@ pub fn fetch(
                 || trimmed_line.starts_with('#')
                 || trimmed_line.starts_with('.')
             {
-                program.line += 1; // Increment line counter for the skipped line
+                pc.store_immediate((pc_val + 1u16) as usize).unwrap(); // Increment line counter for the skipped line
                 continue; // Try the next line
             }
 
-            // Process the valid instruction line
-            let parts: Vec<&str> = trimmed_line.split_whitespace().collect();
-            program.raw_opcode =
-                parts.get(0).copied().unwrap_or_default().to_string();
-            program.arg1 = ProgramArg {
-                raw: parts.get(1).copied().unwrap_or_default().to_string(),
-                parsed: ArgType::None,
-            };
-            program.arg2 = ProgramArg {
-                raw: parts.get(2).copied().unwrap_or_default().to_string(),
-                parsed: ArgType::None,
-            };
-            program.arg3 = ProgramArg {
-                raw: parts.get(3).copied().unwrap_or_default().to_string(),
-                parsed: ArgType::None,
-            };
-
-            program.line += 1;
-            r_registers
-                .get(PROGRAM_COUNTER)
-                .unwrap()
-                .store_immediate(program.line as usize)
-                .unwrap();
+            program.raw = trimmed_line.to_string();
+            pc.store_immediate((pc_val + 1u16) as usize);
             break;
         } else {
             info!("End of program reached. Halting CPU.");
             next_cpu_stage.set(CpuCycleStage::Halt);
 
-            program.raw_opcode = String::new(); // Clear fields
             program.opcode = OpCode::None;
-            program.arg1 = ProgramArg::default();
-            program.arg2 = ProgramArg::default();
-            program.arg3 = ProgramArg::default();
+            program.arg1 = ArgType::default();
+            program.arg2 = ArgType::default();
+            program.arg3 = ArgType::default();
 
             // program.line remains at the position *after* the last line
             break;
@@ -318,11 +354,13 @@ pub fn fetch(
 pub fn decode(mut r_active_program: ResMut<ActiveProgram>) {
     let mut program = r_active_program.as_mut();
 
-    program.opcode = OpCode::from_str(&program.raw_opcode).unwrap_or_default();
+    let sections: Vec<String> =
+        program.raw.split_whitespace().map(String::from).collect();
 
-    program.arg1.parsed = parse_arg(&program.arg1.raw);
-    program.arg2.parsed = parse_arg(&program.arg2.raw);
-    program.arg3.parsed = parse_arg(&program.arg3.raw);
+    program.opcode = OpCode::from_str(&sections[0]).unwrap_or(OpCode::None);
+    program.arg1 = parse_arg(&sections[1]);
+    program.arg2 = parse_arg(&sections[2]);
+    program.arg3 = parse_arg(&sections[3]);
 }
 
 pub fn execute(
@@ -336,242 +374,100 @@ pub fn execute(
     let program = r_active_program.as_mut();
     let registers = r_registers.as_mut();
     let memory = r_memory.as_mut();
+    let mut pc = registers.get(PROGRAM_COUNTER).unwrap();
+    let pc_val = pc.read_u16().unwrap();
+
+    // Pre-extract flag values to avoid multiple mutable borrows
+    let zero_flag = registers.get(FLAG_ZERO).unwrap().read_u16().unwrap();
+    let negative_flag =
+        registers.get(FLAG_NEGATIVE).unwrap().read_u16().unwrap();
 
     let execution_result = match program.opcode {
-        OpCode::MOV => mov(
-            &program.arg1.parsed,
-            &program.arg2.parsed,
-            registers,
-            memory,
-        ),
+        OpCode::MOV => mov(&program.arg1, &program.arg2, registers, memory),
         OpCode::ADD => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            add(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-            )
+            add(&program.arg1, &program.arg2, &program.arg3, registers)
         }
-        OpCode::SUB => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            sub(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-                &r_memory,
-            )
-        }
-        OpCode::MUL => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            mul(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-                &r_memory,
-            )
-        }
-        OpCode::DIV => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            div(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-                &r_memory,
-            )
-        }
+        OpCode::SUB => sub(
+            &program.arg1,
+            &program.arg2,
+            &program.arg3,
+            registers,
+            &r_memory,
+        ),
+        OpCode::MUL => mul(
+            &program.arg1,
+            &program.arg2,
+            &program.arg3,
+            registers,
+            &r_memory,
+        ),
+        OpCode::DIV => div(
+            &program.arg1,
+            &program.arg2,
+            &program.arg3,
+            registers,
+            &r_memory,
+        ),
         OpCode::ST => st(registers, memory),
         OpCode::LD => ld(registers, memory),
         OpCode::AND => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            and(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-            )
+            and(&program.arg1, &program.arg2, &program.arg3, registers)
         }
         OpCode::OR => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            or(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-            )
+            or(&program.arg1, &program.arg2, &program.arg3, registers)
         }
         OpCode::XOR => {
-            let arg3_option = if program.arg3.raw.is_empty() {
-                None
-            } else {
-                Some(program.arg3.parsed.clone())
-            };
-            xor(
-                &program.arg1.parsed,
-                &program.arg2.parsed,
-                &arg3_option,
-                registers,
-            )
+            xor(&program.arg1, &program.arg2, &program.arg3, registers)
         }
-        OpCode::NOT => not(&program.arg1.parsed, registers),
-        OpCode::SHL => {
-            shl(&program.arg1.parsed, &program.arg2.parsed, registers)
-        }
-        OpCode::SHR => {
-            shr(&program.arg1.parsed, &program.arg2.parsed, registers)
-        }
+        OpCode::NOT => not(&program.arg1, registers),
+        OpCode::SHL => shl(&program.arg1, &program.arg2, registers),
+        OpCode::SHR => shr(&program.arg1, &program.arg2, registers),
         OpCode::HALT => {
             info!("Halting CPU!");
             next_cpu_stage.set(CpuCycleStage::Halt);
             Ok(())
         }
         OpCode::WDM => wdm(
-            &program.arg1.parsed,
-            &program.arg2.parsed,
-            &program.arg3.parsed,
+            &program.arg1,
+            &program.arg2,
+            &program.arg3,
             r_display_memory,
             registers,
             memory,
         ),
         OpCode::JMP => {
-            let target_symbol =
-                program.arg1.raw.strip_prefix('.').unwrap_or_default();
-            let target_line = program
-                .symbols
-                .get(target_symbol)
-                .copied()
-                .unwrap_or_default();
-            if target_line == 0 {
-                Err(RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: format!(
-                        "JMP target symbol '.{}' not found.",
-                        target_symbol
-                    ),
-                })
+            let target_symbol = if let ArgType::Symbol(sym) = &program.arg1 {
+                sym
             } else {
-                program.line = target_line;
-                match get_register_mut(registers, PROGRAM_COUNTER) {
-                    Ok(pc_reg) => pc_reg.write_section_u16(target_line as u16),
-                    Err(e) => Err(e),
-                }
-            }
+                error!("Operand of 'JMP' must be a symbol.");
+                ""
+            };
+            jmp(&program, target_symbol, pc)
         }
         OpCode::JIZ => {
-            // Read flag, handling Result
-            match get_operand_value(
-                registers,
-                &Memory::new(),
-                &ArgType::Register(FLAG_ZERO.to_string()),
-            ) {
-                Ok(zero_flag) => {
-                    if zero_flag == 1 {
-                        // Jump logic
-                        let target_symbol = program
-                            .arg1
-                            .raw
-                            .strip_prefix('.')
-                            .unwrap_or_default();
-                        let target_line = program
-                            .symbols
-                            .get(target_symbol)
-                            .copied()
-                            .unwrap_or_default();
-                        if target_line == 0 {
-                            Err(RizeError {
-                                type_: RizeErrorType::Execute,
-                                message: format!(
-                                    "JIZ target symbol '.{}' not found.",
-                                    target_symbol
-                                ),
-                            })
-                        } else {
-                            program.line = target_line;
-                            match get_register_mut(registers, PROGRAM_COUNTER) {
-                                Ok(pc_reg) => {
-                                    pc_reg.write_section_u16(target_line as u16)
-                                }
-                                Err(e) => Err(e),
-                            }
-                        }
-                    } else {
-                        // Flag is zero, don't jump
-                        Ok(())
-                    }
-                }
-                Err(e) => Err(e), // Propagate flag read error
+            let target_symbol = if let ArgType::Symbol(sym) = &program.arg1 {
+                sym
+            } else {
+                error!("Operand of 'JIZ' must be a symbol.");
+                ""
+            };
+            if zero_flag == 0 {
+                Ok(())
+            } else {
+                jmp(&program, target_symbol, pc)
             }
         }
         OpCode::JIN => {
-            // Read flag, handling Result
-            match get_operand_value(
-                registers,
-                &Memory::new(),
-                &ArgType::Register(FLAG_NEGATIVE.to_string()),
-            ) {
-                Ok(negative_flag) => {
-                    if negative_flag == 1 {
-                        // Jump logic
-                        let target_symbol = program
-                            .arg1
-                            .raw
-                            .strip_prefix('.')
-                            .unwrap_or_default();
-                        let target_line = program
-                            .symbols
-                            .get(target_symbol)
-                            .copied()
-                            .unwrap_or_default();
-                        if target_line == 0 {
-                            Err(RizeError {
-                                type_: RizeErrorType::Execute,
-                                message: format!(
-                                    "JIN target symbol '.{}' not found.",
-                                    target_symbol
-                                ),
-                            })
-                        } else {
-                            program.line = target_line;
-                            match get_register_mut(registers, PROGRAM_COUNTER) {
-                                Ok(pc_reg) => {
-                                    pc_reg.write_section_u16(target_line as u16)
-                                }
-                                Err(e) => Err(e),
-                            }
-                        }
-                    } else {
-                        // Flag is zero, don't jump
-                        Ok(())
-                    }
-                }
-                Err(e) => Err(e), // Propagate flag read error
+            let target_symbol = if let ArgType::Symbol(sym) = &program.arg1 {
+                sym
+            } else {
+                error!("Operand of 'JIN' must be a symbol.");
+                ""
+            };
+            if negative_flag == 0 {
+                Ok(())
+            } else {
+                jmp(program, target_symbol, pc)
             }
         }
         _ => {
@@ -586,13 +482,13 @@ pub fn execute(
     // Handle the result of the execution
     if let Err(e) = execution_result {
         error!(
-            "Execution Error ({:?}): {} (Op: {}, Args: '{}', '{}', '{}')",
+            "Execution Error ({:?}): {} (Op: {:?}, Args: '{:?}', '{:?}', '{:?}')",
             e.type_,
             e.message,
-            program.raw_opcode,
-            program.arg1.raw,
-            program.arg2.raw,
-            program.arg3.raw
+            program.opcode,
+            program.arg1,
+            program.arg2,
+            program.arg3
         );
         // Potentially set a CPU Halted state here in the future
     }
@@ -602,86 +498,6 @@ pub fn execute(
 /// Helper Functions ///
 /// ---------------- ///
 
-/// Gets a mutable reference to a register by name.
-fn get_register_mut<'a>(
-    registers: &'a mut Registers,
-    reg_name: &str,
-) -> Result<&'a mut Register, RizeError> {
-    registers.get(reg_name).ok_or_else(|| RizeError {
-        type_: RizeErrorType::RegisterRead, // Or RegisterWrite?
-        message: format!("Register '{}' not found!", reg_name),
-    })
-}
-
-/// Determines the value of an operand (Register, Immediate, or Memory Address).
-/// Reads section-aware for registers.
-fn get_operand_value(
-    registers: &mut Registers,
-    memory: &Memory,
-    arg: &ArgType,
-) -> Result<u16, RizeError> {
-    match arg {
-        ArgType::Register(reg_name) => {
-            let register = get_register_mut(registers, reg_name)?;
-            // Use the new trait method
-            register.read_section_u16()
-        }
-        ArgType::Immediate(imm) => Ok(*imm),
-        ArgType::MemAddr(addr) => {
-            memory.read(*addr) // read already returns Result<u16, RizeError>
-        }
-        ArgType::Symbol(sym) => Err(RizeError {
-            type_: RizeErrorType::Decode, // Or Execute?
-            message: format!(
-                "Cannot use symbol '.{}' as an operand value.",
-                sym
-            ),
-        }),
-        ArgType::None | ArgType::Error => Err(RizeError {
-            type_: RizeErrorType::Decode, // Or Execute?
-            message:
-                "Invalid/None ArgType encountered where value operand expected."
-                    .to_string(),
-        }),
-    }
-}
-
-/// Determines the destination register for instructions with an optional 3rd argument.
-/// Returns a mutable reference to the destination register.
-/// UPDATED: Also returns the name of the destination register as a String.
-fn determine_destination_register_mut<'a>(
-    registers: &'a mut Registers,
-    arg1: &ArgType,
-    arg3_opt: &Option<ArgType>,
-) -> Result<(&'a mut Register, String), RizeError> {
-    match arg3_opt {
-        // If arg3 is provided and is a register
-        Some(ArgType::Register(reg3_name)) => {
-            let reg_ref = get_register_mut(registers, reg3_name)?;
-            Ok((reg_ref, reg3_name.clone()))
-        }
-        // If arg3 is None or a comment, use arg1 (which must be a register)
-        None | Some(ArgType::None) => {
-            if let ArgType::Register(reg1_name) = arg1 {
-                let reg_ref = get_register_mut(registers, reg1_name)?;
-                Ok((reg_ref, reg1_name.clone()))
-            } else {
-                Err(RizeError {
-                    type_: RizeErrorType::Execute,
-                    message: "Destination (arg1) must be a Register when arg3 is omitted."
-                        .to_string(),
-                })
-            }
-        }
-        // If arg3 is provided but is not a register
-        Some(_) => Err(RizeError {
-            type_: RizeErrorType::Execute,
-            message:
-                "Third argument (destination) must be a Register or omitted."
-                    .to_string(),
-        }),
-    }
-}
 
 /// ### Parsing Rules
 ///
@@ -735,76 +551,141 @@ fn parse_arg(arg: &str) -> ArgType {
     ArgType::Error
 }
 
+fn increment_pc(registers: &mut Registers) {}
+
+fn write_pc(registers: &mut Registers, value: usize) {}
+
+fn jmp(
+    program: &ActiveProgram,
+    target: &str,
+    pc: &mut Register,
+) -> Result<(), RizeError> {
+    let target_line = program.symbols.get(target).copied().unwrap_or_default();
+    pc.store_immediate(target_line as usize)
+}
+
 fn mov(
     arg1: &ArgType, // Destination (Register or MemAddr)
     arg2: &ArgType, // Source (Register, Immediate, MemAddr)
     registers: &mut Registers,
     memory: &mut Memory, // Needs mutable memory for MemAddr dest
 ) -> Result<(), RizeError> {
-    let source_value = get_operand_value(registers, memory, arg2)?;
-
-    match arg1 {
-        ArgType::Register(dest_reg_name) => {
-            let register = get_register_mut(registers, dest_reg_name)?;
-            // Use the new trait method
-            register.write_section_u16(source_value)
-        }
-        ArgType::MemAddr(dest_addr) => {
-            memory.write(*dest_addr, source_value) // write returns Result
-        }
-        _ => Err(RizeError {
+    if !(matches!(arg1, ArgType::Register(_))
+        || matches!(arg1, ArgType::MemAddr(_)))
+    {
+        return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "MOV destination (arg1) must be Register or MemAddr."
-                .to_string(),
-        }),
+            message: "MOV destination (arg1) must be Register.".to_string(),
+        });
+    }
+
+    match arg2 {
+        ArgType::Immediate(val) => arg1.store_immediate(
+            Some(registers),
+            Some(memory),
+            None,
+            *val as usize,
+        ),
+        ArgType::Register(reg_name) => {
+            let val: u16 = registers.get(reg_name).unwrap().read_u16()?;
+            arg1.store_immediate(
+                Some(registers),
+                Some(memory),
+                None,
+                val as usize,
+            )
+        }
+        ArgType::MemAddr(addr) => {
+            let val: u16 = memory.read(*addr)?;
+            arg1.store_immediate(
+                Some(registers),
+                Some(memory),
+                Some(*addr),
+                val as usize,
+            )
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message:
+                    "MOV source (arg2) must be Register, Immediate, or MemAddr."
+                        .to_string(),
+            })
+        }
     }
 }
 
 fn add(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
+    memory: &mut Memory,
 ) -> Result<(), RizeError> {
-    // Validate arg1 is a register and get its value
-    let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
-    let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
-
-    // Ensure arg1 is a register (destination or source)
-    if !matches!(arg1, ArgType::Register(_)) {
+    if !(matches!(arg1, ArgType::Register(_))
+        || matches!(arg1, ArgType::MemAddr(_)))
+    {
         return Err(RizeError {
             type_: RizeErrorType::Execute,
-            message: "ADD requires the first argument (arg1) to be a register."
+            message:
+                "ADD destination (arg1) must be Register or Memory Address."
+                    .to_string(),
+        });
+    }
+
+    if !(matches!(arg2, ArgType::Register(_))
+        || matches!(arg2, ArgType::Immediate(_))
+        || matches!(arg2, ArgType::MemAddr(_)))
+    {
+        return Err(RizeError { 
+            type_: RizeErrorType::Execute, 
+            message: "ADD requires the second argument (arg2) to be a Register, Immediate, or Memory Address"
+            .to_string() 
+        });
+    }
+
+    if !(matches!(arg3, ArgType::Register(_)) || !matches!(arg3, ArgType::None))
+    {
+        return Err(RizeError {
+            type_: RizeErrorType::Execute,
+            message: "ADD requires the third argument (arg3) to be a Register."
                 .to_string(),
         });
     }
 
-    // Perform addition using wrapping arithmetic
-    let result = v1.wrapping_add(v2);
+    let val: usize = match arg2 {
+        ArgType::Immediate(val) => *val as usize,
+        ArgType::Register(reg_name) => {
+            registers.get(reg_name).unwrap().read_u16()? as usize
+        }
+        ArgType::MemAddr(addr) => memory.read(*addr).unwrap() as usize,
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: "ADD source (arg2) must be Register, Immediate, or MemAddr.".to_string()
+            })
+    }};
 
-    // Determine destination register using helper
-    let (_dest_register, dest_name) =
-        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+    let (result, v1) = match arg3 {
+        ArgType::Register(reg_name) => {
+            arg3.add(Some(registers), Some(memory), val, Some(arg1))
+        }
+        _ => {
+            arg1.add(Some(registers), Some(memory), val, None)
+        }
+    }?;
 
     // --- Set Flags ---
     // Zero Flag (fz): Set if result is 0
     registers
-        .get(FLAG_ZERO)
-        .ok_or_else(|| RizeError {
-            type_: RizeErrorType::RegisterRead,
-            message: format!("Flag register '{}' not found", FLAG_ZERO),
-        })?
+        .get(FLAG_ZERO).unwrap()
         .write_bool(result == 0)?;
     // Negative Flag (fn): Set if MSB of result is 1
     registers
-        .get(FLAG_NEGATIVE)
-        .ok_or_else(|| RizeError {
-            type_: RizeErrorType::RegisterRead,
-            message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
-        })?
+        .get(FLAG_NEGATIVE).unwrap()
         .write_bool(result & 0x8000 != 0)?; // Check MSB
                                             // Carry Flag (fc): Set if unsigned addition resulted in carry
-    let carry = (v1 as u32 + v2 as u32) > 0xFFFF;
+    let carry = (v1 as u32 + val as u32) > 0xFFFF;
     registers
         .get(FLAG_CARRY)
         .ok_or_else(|| RizeError {
@@ -814,7 +695,7 @@ fn add(
         .write_bool(carry)?;
     // Overflow Flag (fo): Set if signed addition resulted in overflow
     let v1_sign = (v1 >> 15) & 1;
-    let v2_sign = (v2 >> 15) & 1;
+    let v2_sign = (val >> 15) & 1;
     let result_sign = (result >> 15) & 1;
     let overflow = (v1_sign == v2_sign) && (result_sign != v1_sign);
     registers
@@ -826,16 +707,13 @@ fn add(
         .write_bool(overflow)?;
     // --- End Set Flags ---
 
-    // Get register ref again (determine_... returns name now)
-    let dest_register = get_register_mut(registers, &dest_name)?;
-    // Use section-aware trait method
-    dest_register.write_section_u16(result)
+    Ok(())
 }
 
 fn sub(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
     r_memory: &Memory,
 ) -> Result<(), RizeError> {
@@ -925,7 +803,7 @@ fn ld(registers: &mut Registers, memory: &Memory) -> Result<(), RizeError> {
 fn and(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
@@ -953,7 +831,7 @@ fn and(
 fn or(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
@@ -981,7 +859,7 @@ fn or(
 fn xor(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
@@ -998,8 +876,14 @@ fn xor(
 
     let result = v1 ^ v2;
 
+    let arg3_opt = if matches!(arg3, ArgType::None) {
+        None
+    } else {
+        Some(arg3.clone())
+    };
+
     let (_dest_register, dest_name) =
-        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+        determine_destination_register_mut(registers, arg1, &arg3_opt)?;
     // Get register ref again
     let dest_register = get_register_mut(registers, &dest_name)?;
     // Use section-aware trait method
@@ -1113,7 +997,7 @@ fn wdm(
 fn mul(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
     r_memory: &Memory,
 ) -> Result<(), RizeError> {
@@ -1188,7 +1072,7 @@ fn mul(
 fn div(
     arg1: &ArgType,
     arg2: &ArgType,
-    arg3_opt: &Option<ArgType>,
+    arg3: &ArgType,
     registers: &mut Registers,
     r_memory: &Memory,
 ) -> Result<(), RizeError> {

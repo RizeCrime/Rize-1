@@ -25,14 +25,14 @@ impl Register {
 }
 
 pub trait RegisterTrait {
-    fn read(&self) -> Result<Vec<i8>, &'static str>;
-    fn read_lower_half(&self) -> Result<Vec<i8>, &'static str>;
-    fn read_lower_quarter(&self) -> Result<Vec<i8>, &'static str>;
-    fn read_lower_eigth(&self) -> Result<Vec<i8>, &'static str>;
+    fn read(&self) -> Result<Vec<i8>, RizeError>;
+    fn read_lower_half(&self) -> Result<Vec<i8>, RizeError>;
+    fn read_lower_quarter(&self) -> Result<Vec<i8>, RizeError>;
+    fn read_lower_eigth(&self) -> Result<Vec<i8>, RizeError>;
 
-    fn read_u16(&self) -> Result<u16, &'static str>;
-    fn read_ascii(&self) -> Result<String, &'static str>;
-    fn read_hex(&self) -> Result<String, &'static str>;
+    fn read_u16(&self) -> Result<u16, RizeError>;
+    fn read_ascii(&self) -> Result<String, RizeError>;
+    fn read_hex(&self) -> Result<String, RizeError>;
 
     #[doc(hidden)]
     fn store_immediate(&self, value: usize) -> Result<(), RizeError>;
@@ -50,27 +50,27 @@ pub trait RegisterTrait {
 }
 
 impl RegisterTrait for Register {
-    fn read(&self) -> Result<Vec<i8>, &'static str> {
-        let bits = self
-            .bits
-            .lock()
-            .map_err(|_| "Failed to acquire lock for reading")?;
+    fn read(&self) -> Result<Vec<i8>, RizeError> {
+        let bits = self.bits.lock().map_err(|_| RizeError {
+            type_: RizeErrorType::RegisterRead,
+            message: "Failed to acquire lock for read".to_string(),
+        })?;
         Ok(bits.clone())
     }
-    fn read_lower_half(&self) -> Result<Vec<i8>, &'static str> {
+    fn read_lower_half(&self) -> Result<Vec<i8>, RizeError> {
         let bits = self.read()?;
         Ok(bits[CPU_BITTAGE / 2..].to_vec())
     }
-    fn read_lower_quarter(&self) -> Result<Vec<i8>, &'static str> {
+    fn read_lower_quarter(&self) -> Result<Vec<i8>, RizeError> {
         let bits = self.read()?;
         Ok(bits[CPU_BITTAGE * 3 / 4..].to_vec())
     }
-    fn read_lower_eigth(&self) -> Result<Vec<i8>, &'static str> {
+    fn read_lower_eigth(&self) -> Result<Vec<i8>, RizeError> {
         let bits = self.read()?;
         Ok(bits[CPU_BITTAGE * 7 / 8..].to_vec())
     }
 
-    fn read_u16(&self) -> Result<u16, &'static str> {
+    fn read_u16(&self) -> Result<u16, RizeError> {
         let bits = self.read()?;
         let mut value: u16 = 0;
         for (i, bit) in bits.iter().enumerate() {
@@ -79,7 +79,7 @@ impl RegisterTrait for Register {
         Ok(value)
     }
 
-    fn read_ascii(&self) -> Result<String, &'static str> {
+    fn read_ascii(&self) -> Result<String, RizeError> {
         let value_u16 = self.read_u16()?;
         let bytes = value_u16.to_le_bytes(); // Get bytes in little-endian order
         let ascii_string: String = bytes
@@ -89,7 +89,7 @@ impl RegisterTrait for Register {
         Ok(ascii_string)
     }
 
-    fn read_hex(&self) -> Result<String, &'static str> {
+    fn read_hex(&self) -> Result<String, RizeError> {
         let value_u16 = self.read_u16()?;
         Ok(format!("0x{:04X}", value_u16)) // Format as 4-digit hex with 0x prefix
     }
@@ -200,11 +200,11 @@ impl RegisterTrait for Register {
             }
         };
 
-        // Map the Result<Vec<i8>, &'static str> to Result<Vec<i8>, RizeError>
+        // Map the Result<Vec<i8>, RizeError> to Result<Vec<i8>, RizeError>
         let bits = bits_result.map_err(|e| RizeError {
             type_: RizeErrorType::RegisterRead,
             message: format!(
-                "Failed to read section '{}': {}",
+                "Failed to read section '{}': {:?}",
                 self.section, e
             ),
         })?;
