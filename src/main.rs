@@ -112,7 +112,10 @@ impl Plugin for RizeOne {
         app.add_plugins(interpreter::RizeOneInterpreter);
 
         #[cfg(debug_assertions)]
-        app.add_plugins(StateInspectorPlugin::<CpuCycleStage>::default());
+        app.add_plugins(
+            // StateInspectorPlugin::<CpuCycleStage>::default(),
+            ResourceInspectorPlugin::<types::Memory>::default(),
+        );
     }
 }
 

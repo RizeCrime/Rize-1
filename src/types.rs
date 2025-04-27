@@ -328,13 +328,13 @@ impl BitToString for i8 {
     Default, Debug, Eq, PartialEq, Resource, Reflect, InspectorOptions,
 )]
 pub struct Memory {
-    bytes: Vec<u16>,
+    bytes: HashMap<usize, u16>,
 }
 
 impl Memory {
     pub fn new() -> Self {
         Self {
-            bytes: vec![0u16; MEMORY_SIZE_BYTES],
+            bytes: HashMap::new(),
         }
     }
     pub fn write(&mut self, address: u16, data: u16) -> Result<(), RizeError> {
@@ -349,7 +349,7 @@ impl Memory {
             });
         }
 
-        self.bytes[address as usize] = data;
+        self.bytes.insert(address as usize, data);
         Ok(())
     }
 
@@ -365,7 +365,7 @@ impl Memory {
             });
         }
 
-        Ok(self.bytes[address as usize])
+        Ok(*self.bytes.get(&(address as usize)).unwrap_or(&0))
     }
 }
 
