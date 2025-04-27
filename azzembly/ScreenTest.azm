@@ -40,11 +40,12 @@ ADD GCA 1       # Increment X Coordinate
 
 SUB GCA 32 GDA  # Set Zero Flag if X == 32
 MOV GDA FZ
-JIZ .exit       # Exit if True
+JIZ .reset      # Start Over!
 
 SHL GCA 8       # Put X Back in the Upper Byte 
-
 JMP .colorLoop
 
-.exit 
-HALT
+.reset 
+MOV GCA 0       # Reset Coordinates
+SUB GAA 8       # Decrement Color
+JMP .colorLoop
