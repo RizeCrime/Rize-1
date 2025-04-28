@@ -15,6 +15,9 @@ use crate::*;
 mod display;
 pub use display::*;
 
+mod types; 
+use types::*;
+
 #[derive(Resource, Default, Reflect, InspectorOptions)]
 #[reflect(Resource, InspectorOptions)]
 pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
@@ -715,58 +718,52 @@ fn sub(
     arg2: &ArgType,
     arg3: &ArgType,
     registers: &mut Registers,
-    r_memory: &Memory,
+    r_memory: &mut Memory,
 ) -> Result<(), RizeError> {
-    // Validate arg1 is a register and get its value
-    let v1 = get_operand_value(registers, r_memory, arg1)?;
-    // Get the value of arg2 (can be Register or Immediate)
-    let v2 = get_operand_value(registers, r_memory, arg2)?;
+    let val = match arg2 {
+        ArgType::Register(reg_name) => {
+            let register = registers.get(reg_name).unwrap();
+            register.read_u16().unwrap() as usize
+        }
+        ArgType::Immediate(value) => *value as usize,
+        ArgType::MemAddr(addr) => r_memory.read(*addr)? as usize,
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute,
+                message: "SUB source (arg2) must be Register, Immediate, or MemAddr.".to_string()
+            })
+    }};
 
-    // Ensure arg1 is a register (destination or source)
-    if !matches!(arg1, ArgType::Register(_)) {
-        return Err(RizeError {
-            type_: RizeErrorType::Execute,
-            message: "SUB requires the first argument (arg1) to be a register."
-                .to_string(),
-        });
-    }
-
-    // Perform subtraction using wrapping arithmetic
-    let result = v1.wrapping_sub(v2);
-
-    // Determine destination register using helper
-    let (_dest_register, dest_name) =
-        determine_destination_register_mut(registers, arg1, arg3_opt)?;
+    let (result, v1) = match arg3 {
+        ArgType::Register(reg_name) => {
+            arg3.add(Some(registers), Some(r_memory), !val + 1, Some(arg1))
+        }
+        _ => {
+            arg1.add(Some(registers), Some(r_memory), !val + 1, None)
+        }
+    }?;
 
     // --- Set Flags ---
     // Zero Flag (fz): Set if result is 0
     registers
-        .get(FLAG_ZERO)
-        .ok_or_else(|| RizeError {
-            type_: RizeErrorType::RegisterRead,
-            message: format!("Flag register '{}' not found", FLAG_ZERO),
-        })?
+        .get(FLAG_ZERO).unwrap()
         .write_bool(result == 0)?;
-    // Negative Flag (fn): Set if MSB of result is 1
+    // Negative Flag (fn): Set if MSB of result is 1  
     registers
-        .get(FLAG_NEGATIVE)
-        .ok_or_else(|| RizeError {
-            type_: RizeErrorType::RegisterRead,
-            message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
-        })?
-        .write_bool(result & 0x8000 != 0)?; // Check MSB
-                                            // Carry Flag (fc): Set if unsigned subtraction resulted in borrow (v1 < v2)
-    let borrow = v1 < v2;
+        .get(FLAG_NEGATIVE).unwrap()
+        .write_bool(result & 0x8000 != 0)?;
+    // Carry Flag (fc): Set if unsigned subtraction resulted in borrow
+    let carry = v1 < val;
     registers
-        .get(FLAG_CARRY) // Often called Borrow flag in subtraction context
+        .get(FLAG_CARRY)
         .ok_or_else(|| RizeError {
             type_: RizeErrorType::RegisterRead,
             message: format!("Flag register '{}' not found", FLAG_CARRY),
         })?
-        .write_bool(borrow)?;
+        .write_bool(carry)?;
     // Overflow Flag (fo): Set if signed subtraction resulted in overflow
     let v1_sign = (v1 >> 15) & 1;
-    let v2_sign = (v2 >> 15) & 1;
+    let v2_sign = (val >> 15) & 1;
     let result_sign = (result >> 15) & 1;
     let overflow = (v1_sign != v2_sign) && (result_sign != v1_sign);
     registers
@@ -778,10 +775,7 @@ fn sub(
         .write_bool(overflow)?;
     // --- End Set Flags ---
 
-    // Get register ref again
-    let dest_register = get_register_mut(registers, &dest_name)?;
-    // Use section-aware trait method
-    dest_register.write_section_u16(result)
+    Ok(())
 }
 
 fn st(registers: &mut Registers, memory: &mut Memory) -> Result<(), RizeError> {
