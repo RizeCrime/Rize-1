@@ -6,8 +6,6 @@
     unreachable_code
 )]
 
-use bevy::prelude::*;
-
 use bevy::{
     log::LogPlugin,
     prelude::*,
@@ -15,9 +13,6 @@ use bevy::{
 };
 
 use bevy_simple_text_input::{TextInput, TextInputPlugin};
-
-// use bevy_egui::EguiPlugin;
-// use bevy_mod_picking::DefaultPickingPlugins;
 
 #[cfg(debug_assertions)]
 use bevy_inspector_egui::quick::{
@@ -31,22 +26,12 @@ use bevy_screen_diagnostics::{
     ScreenFrameDiagnosticsPlugin,
 };
 
-mod constants;
-pub use constants::*;
-
-mod types;
-pub use types::*;
-
-mod systems;
-pub use systems::*;
-
 mod components;
-pub use components::*;
-
+mod constants;
 mod interpreter;
-pub use interpreter::*;
-
-mod ui;
+mod systems;
+mod types;
+// mod ui;
 
 fn main() {
     let mut bevy_app = App::new();
@@ -108,7 +93,7 @@ impl Plugin for RizeOne {
 
         app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);
 
-        app.add_plugins(ui::RizeOneUi);
+        // app.add_plugins(ui::RizeOneUi);
         app.add_plugins(interpreter::RizeOneInterpreter);
 
         #[cfg(debug_assertions)]
