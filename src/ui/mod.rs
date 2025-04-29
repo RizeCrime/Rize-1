@@ -1,22 +1,30 @@
 use bevy::prelude::*;
 use bevy_simple_text_input::TextInputSystem;
+use systems::{
+    available_programs, setup_available_programs, setup_control_panel,
+    setup_display, setup_instruction_ui, setup_ui_registers, setup_ui_root,
+    update_control_panel, update_display, update_instruction_ui,
+    update_register_parsed, update_registers,
+};
+use types::UiBit;
 
-use crate::*;
+use crate::{
+    constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH},
+    types::{RizeError, RizeErrorType},
+};
 
+mod display;
 mod systems;
-use systems::*;
-
 mod types;
-pub use types::*;
 
 pub struct RizeOneUi;
 
 impl Plugin for RizeOneUi {
     fn build(&self, app: &mut App) {
-        app.register_type::<UiRoot>();
-        app.register_type::<UiElement>();
-        app.register_type::<UiText>();
-        app.register_type::<UiRegister>();
+        // app.register_type::<UiRoot>();
+        // app.register_type::<UiElement>();
+        // app.register_type::<UiText>();
+        // app.register_type::<UiRegister>();
         app.register_type::<UiBit>();
 
         app.add_systems(
@@ -64,8 +72,10 @@ impl PixelDisplay {
     ) -> Result<(), RizeError> {
         if x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT {
             return Err(RizeError {
-                type_: RizeErrorType::Display,
-                message: format!("Coordinates ({}, {}) out of bounds", x, y),
+                type_: RizeErrorType::Display(format!(
+                    "Coordinates ({}, {}) out of bounds",
+                    x, y
+                )),
             });
         }
 

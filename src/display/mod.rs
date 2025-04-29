@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 
-use super::*;
-use crate::*;
+use crate::{
+    constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH},
+    types::{RizeError, RizeErrorType},
+    CpuCycleStage,
+};
 
 pub struct RizeOneDisplay;
 
@@ -42,24 +45,20 @@ impl DisplayMemory {
         y: u8,
         color: [u8; 4],
     ) -> Result<(), RizeError> {
-        // Check X bounds
         if (x as usize) >= DISPLAY_WIDTH {
             return Err(RizeError {
-                type_: RizeErrorType::Display,
-                message: format!(
+                type_: RizeErrorType::Display(format!(
                     "X coordinate {} out of bounds (width is {})",
                     x, DISPLAY_WIDTH
-                ),
+                )),
             });
         }
-        // Check Y bounds
         if (y as usize) >= DISPLAY_HEIGHT {
             return Err(RizeError {
-                type_: RizeErrorType::Display,
-                message: format!(
+                type_: RizeErrorType::Display(format!(
                     "Y coordinate {} out of bounds (height is {})",
                     y, DISPLAY_HEIGHT
-                ),
+                )),
             });
         }
 
@@ -71,13 +70,17 @@ impl DisplayMemory {
         self.pixels
             .get(x as usize)
             .ok_or_else(|| RizeError {
-                type_: RizeErrorType::Display,
-                message: format!("X coordinate {} out of bounds", x),
+                type_: RizeErrorType::Display(format!(
+                    "X coordinate {} out of bounds",
+                    x
+                )),
             })?
             .get(y as usize)
             .ok_or_else(|| RizeError {
-                type_: RizeErrorType::Display,
-                message: format!("Y coordinate {} out of bounds", y),
+                type_: RizeErrorType::Display(format!(
+                    "Y coordinate {} out of bounds",
+                    y
+                )),
             })
             .map(|pixel| *pixel)
     }

@@ -2,14 +2,10 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use super::*;
-use crate::*;
-
-#[derive(Component, Reflect, Default)]
-
+#[derive(Debug, Default, Component)]
 pub struct UiElement;
 
-#[derive(Component, Reflect, Default)]
+#[derive(Debug, Default, Component)]
 pub struct UiRoot;
 
 impl UiRoot {
@@ -39,13 +35,13 @@ pub struct UiConversion;
 
 #[derive(Component, Reflect, Default)]
 pub struct UiBit {
-    pub value: i8,
+    pub value: u8,
     pub src: Arc<str>,
     pub idx: usize,
 }
 
 impl UiBit {
-    pub fn new(value: i8, src: impl AsRef<str>, idx: usize) -> impl Bundle {
+    pub fn new(value: u8, src: impl AsRef<str>, idx: usize) -> impl Bundle {
         (
             UiBit {
                 value,

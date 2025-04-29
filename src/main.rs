@@ -1,10 +1,10 @@
-#![allow(
-    dead_code,
-    unused_imports,
-    unused_mut,
-    unused_variables,
-    unreachable_code
-)]
+// #![allow(
+//     dead_code,
+//     unused_imports,
+//     unused_mut,
+//     unused_variables,
+//     unreachable_code
+// )]
 
 use bevy::{
     log::LogPlugin,
@@ -12,9 +12,10 @@ use bevy::{
     window::{PresentMode, WindowResolution},
 };
 
-use bevy_simple_text_input::{TextInput, TextInputPlugin};
+use bevy_simple_text_input::TextInputPlugin;
 
 #[cfg(debug_assertions)]
+#[allow(unused_imports)]
 use bevy_inspector_egui::quick::{
     ResourceInspectorPlugin, StateInspectorPlugin, WorldInspectorPlugin,
 };
@@ -25,13 +26,14 @@ use bevy_screen_diagnostics::{
     ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin,
     ScreenFrameDiagnosticsPlugin,
 };
+use systems::{setup_camera, setup_registers};
 
-mod components;
 mod constants;
+mod display;
 mod interpreter;
 mod systems;
-mod types;
-// mod ui;
+pub mod types;
+mod ui;
 
 fn main() {
     let mut bevy_app = App::new();
@@ -83,29 +85,28 @@ impl Plugin for RizeOne {
     fn build(&self, app: &mut App) {
         app.init_state::<CpuCycleStage>();
 
-        app.insert_resource(types::Registers::new());
-        app.insert_resource(types::Memory::new());
+        app.insert_resource(types::Registers::default());
+        app.insert_resource(types::SystemMemory::default());
 
-        app.register_type::<types::Registers>();
-        app.register_type::<types::Memory>();
+        // app.register_type::<types::Registers>();
+        // app.register_type::<types::SystemMemory>();
 
         app.add_systems(Startup, setup_camera);
-
         app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);
 
         // app.add_plugins(ui::RizeOneUi);
-        app.add_plugins(interpreter::RizeOneInterpreter);
+        // app.add_plugins(interpreter::RizeOneInterpreter);
 
-        #[cfg(debug_assertions)]
-        app.add_plugins(
-            // StateInspectorPlugin::<CpuCycleStage>::default(),
-            ResourceInspectorPlugin::<types::Memory>::default(),
-        );
+        // #[cfg(debug_assertions)]
+        // app.add_plugins(
+        //     // StateInspectorPlugin::<CpuCycleStage>::default(),
+        //     // ResourceInspectorPlugin::<types::Registers>::default(),
+        //     // ResourceInspectorPlugin::<types::SystemMemory>::default(),
+        // );
     }
 }
 
 #[derive(States, Default, Debug, Reflect, Hash, PartialEq, Eq, Clone, Copy)]
-
 pub enum CpuCycleStage {
     #[default]
     Startup,

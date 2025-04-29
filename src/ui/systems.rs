@@ -1,14 +1,23 @@
 use std::collections::HashMap;
-use std::{ffi::OsStr, path::PathBuf};
+use std::path::PathBuf;
 
 use bevy::image::{ImageSampler, ImageSamplerDescriptor};
-use bevy::render::view::visibility;
-use bevy_simple_text_input::{TextInputSettings, TextInputSubmitEvent};
+use bevy::prelude::*;
+use bevy::ui::FlexDirection::{Column, Row};
+use bevy_simple_text_input::{TextInput, TextInputSubmitEvent};
 use rand::Rng;
-use FlexDirection::*;
 
-use super::*;
-use crate::*;
+use super::types::{
+    TogglePart, UiBit, UiConversion, UiElement, UiRegister, UiRoot, UiText,
+};
+use super::PixelDisplay;
+use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, PROGRAM_COUNTER};
+use crate::display::DisplayMemory;
+use crate::types::{
+    ActiveProgram, ArgType, AzmPrograms, Bits, OpCode, ProgramSettings,
+    Registers, DSB,
+};
+use crate::CpuCycleStage;
 
 /// --------------- ///
 /// Startup Systems ///
@@ -82,11 +91,11 @@ pub fn setup_ui_registers(
     commands.entity(ui_root).add_child(sp_container);
     commands.entity(ui_root).add_child(flag_container);
 
-    for register in registers {
+    for (name, register) in registers {
         let register_col: Entity = commands
             .spawn((
                 NodeBuilder::panel().build(),
-                Name::new(format!("ui-{}-col", register.0)),
+                Name::new(format!("ui-{}-col", name)),
                 UiRegister,
             ))
             .id();
@@ -96,20 +105,21 @@ pub fn setup_ui_registers(
                     .gap(2.0)
                     .border(UiRect::all(Val::Px(2.0)))
                     .build(),
-                Name::new(format!("ui-{}-row", register.0)),
+                Name::new(format!("ui-{}-row", register.name)),
                 border_color(None),
             ))
             .id();
 
-        let bits: Vec<i8> = register.1.read().unwrap();
-        let mut ui_bits: Vec<Entity> = bits
+        let bits: Bits = (&register.byte).into();
+        let ui_bits: Vec<Entity> = bits
+            .vec
             .iter()
             .enumerate()
             .map(|(idx, bit)| {
                 commands
                     .spawn((
-                        UiBit::new(*bit, register.0.as_str(), idx),
-                        Name::new(format!("ui-{}-{idx}", register.0)),
+                        UiBit::new(*bit, register.byte.as_str(), idx),
+                        Name::new(format!("ui-{}-{idx}", register.name)),
                     ))
                     .id()
             })
@@ -118,24 +128,24 @@ pub fn setup_ui_registers(
         let register_conversions: Entity = commands
             .spawn((
                 NodeBuilder::row().gap(8.0).build(),
-                Name::new(format!("ui-{}-conversions", register.0)),
+                Name::new(format!("ui-{}-conversions", register.name)),
             ))
-            .with_child((Text::new(format!("'{}': ", register.0)), UiText))
+            .with_child((Text::new(format!("'{}': ", register.name)), UiText))
             .with_child((
                 Text::new("Dec"),
-                Name::new(format!("ui-{}-dec", register.0)),
+                Name::new(format!("ui-{}-dec", register.name)),
                 UiText,
                 UiConversion,
             ))
             .with_child((
                 Text::new("Hex"),
-                Name::new(format!("ui-{}-hex", register.0)),
+                Name::new(format!("ui-{}-hex", register.name)),
                 UiText,
                 UiConversion,
             ))
             .with_child((
                 Text::new("ASCII"),
-                Name::new(format!("ui-{}-ascii", register.0)),
+                Name::new(format!("ui-{}-utf8", register.name)),
                 UiText,
                 UiConversion,
             ))
@@ -146,14 +156,14 @@ pub fn setup_ui_registers(
             .add_children(&[register_row, register_conversions]);
         commands.entity(register_row).add_children(&ui_bits);
 
-        let target_container = match register.0.as_str().chars().next().unwrap()
-        {
-            'g' => gp_container,
-            'f' => flag_container,
-            // MAR, MDR, PC, IR
-            'm' | 'p' | 'i' => sp_container,
-            _ => misc_container,
-        };
+        let target_container =
+            match register.name.as_str().chars().next().unwrap() {
+                'g' => gp_container,
+                'f' => flag_container,
+                // MAR, MDR, PC, IR
+                'm' | 'p' | 'i' => sp_container,
+                _ => misc_container,
+            };
 
         commands.entity(target_container).add_child(register_col);
     }
@@ -501,6 +511,7 @@ pub fn setup_display(
 
 pub fn update_control_panel(
     mut r_active_program: ResMut<ActiveProgram>,
+    mut r_program_settings: ResMut<ProgramSettings>,
     s_current_stage: Res<State<CpuCycleStage>>,
     mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
     q_button: Query<
@@ -525,7 +536,7 @@ pub fn update_control_panel(
             .into();
         }
         if name.as_str() == "ui-autostep-lines-text" {
-            text.0 = r_active_program.autostep_lines.to_string();
+            text.0 = r_program_settings.autostep_lines.to_string();
         }
     });
 
@@ -621,7 +632,7 @@ pub fn update_control_panel(
                 .unwrap();
 
             if let Ok(value) = event.value.parse::<usize>() {
-                r_active_program.autostep_lines = value;
+                r_program_settings.autostep_lines = value;
             }
 
             *b_visibility = Visibility::Visible;
@@ -698,18 +709,11 @@ pub fn available_programs(
                 let program_contents: std::fs::File =
                     std::fs::File::open(path_buf).unwrap();
 
-                r_program.as_mut().path = path_buf.clone();
-                r_program.as_mut().file_stem = button_name.clone().into();
                 r_program.as_mut().contents =
                     std::io::read_to_string(&program_contents).unwrap();
 
                 // Reset Program Counter
-                r_program.as_mut().line = 0;
-                r_registers
-                    .get(PROGRAM_COUNTER)
-                    .unwrap()
-                    .store_immediate(0)
-                    .unwrap();
+                r_registers.get(PROGRAM_COUNTER).unwrap().write(0).unwrap();
             }
         }
     });
@@ -726,22 +730,16 @@ pub fn update_registers(
     mut q_ui: Query<(&mut Text, &Name), With<UiBit>>,
 ) {
     for (name, register) in r_registers.all().iter() {
-        let bits = match register.read() {
-            Ok(b) => b,
-            Err(e) => {
-                error!("Failed to read register {}: {}", name, e);
-                continue; // Skip this register if reading fails
-            }
-        };
+        let dsb: DSB = register.read().unwrap();
 
-        for (idx, bit) in bits.iter().enumerate() {
+        for (idx, bit) in Bits::from(dsb).vec.iter().enumerate() {
             let target_name = format!("ui-{}-{idx}", name);
 
             // Find the specific UI text element for this bit
             for (mut text, ui_name) in q_ui.iter_mut() {
                 if ui_name.as_str() == target_name {
                     // Update the text content
-                    text.0 = bit.bit_to_string();
+                    text.0 = bit.to_string();
                     break; // Found the element, move to the next bit
                 }
             }
@@ -760,44 +758,31 @@ pub fn update_register_parsed(
     mut q_ui: Query<(&mut Text, &Name), With<UiConversion>>,
 ) {
     for (name, register) in r_registers.all().iter() {
-        let bits = match register.read() {
-            Ok(b) => b,
-            Err(e) => {
-                error!("Failed to read register {}: {}", name, e);
-                continue; // Skip this register if reading fails
-            }
-        };
+        let dsb: DSB = register.read().unwrap();
 
-        // --- Parse and Update U16 ---
-        let u16_value = bits_to_u16(&bits).to_string();
-        let target_u16_name = format!("ui-{name}-dec");
+        // --- Parse and Update Decimal ---
+        let target_name = format!("ui-{name}-dec");
         for (mut text, ui_name) in q_ui.iter_mut() {
-            if ui_name.as_str() == target_u16_name {
-                text.0 = u16_value.clone();
+            if ui_name.as_str() == target_name {
+                text.0 = dsb.as_string();
                 break;
             }
         }
 
         // --- Parse and Update ASCII ---
-        let ascii_value: String = bits_to_u16(&bits)
-            .to_le_bytes()
-            .iter()
-            .map(|&b| if b.is_ascii_graphic() { b as char } else { ' ' }) // Replace non-printable with '.'
-            .collect();
-        let target_ascii_name = format!("ui-{name}-ascii");
+        let target_name = format!("ui-{name}-utf8");
         for (mut text, ui_name) in q_ui.iter_mut() {
-            if ui_name.as_str() == target_ascii_name {
-                text.0 = ascii_value.clone();
+            if ui_name.as_str() == target_name {
+                text.0 = dsb.as_utf8();
                 break;
             }
         }
 
         // --- Parse and Update Hex ---
-        let hex_value = format!("0x{:01X}", bits_to_u16(&bits)); // Format as 4-digit hex
-        let target_hex_name = format!("ui-{name}-hex");
+        let target_name = format!("ui-{name}-hex");
         for (mut text, ui_name) in q_ui.iter_mut() {
-            if ui_name.as_str() == target_hex_name {
-                text.0 = hex_value.clone();
+            if ui_name.as_str() == target_name {
+                text.0 = dsb.as_hex();
                 break;
             }
         }
@@ -808,10 +793,10 @@ pub fn update_instruction_ui(
     r_active_program: Res<ActiveProgram>,
     mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
 ) {
-    let opcode = &r_active_program.raw_opcode;
-    let arg1 = &r_active_program.arg1.raw;
-    let arg2 = &r_active_program.arg2.raw;
-    let arg3 = &r_active_program.arg3.raw;
+    let opcode: String = r_active_program.opcode.as_string();
+    let arg1: String = r_active_program.arg1.as_string();
+    let arg2: String = r_active_program.arg2.as_string();
+    let arg3: String = r_active_program.arg3.as_string();
 
     let instruction_parts = [
         ("OPCODE", opcode),

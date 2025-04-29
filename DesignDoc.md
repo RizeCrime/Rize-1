@@ -96,12 +96,12 @@ Arguments on the other hand are limited to 16 bits in length.
 **Memory Related OPCODES**
 (This includes Registers)  
 
-| OPCODE | ARG1          | ARG2          | ARG3          |
-| ------ | ------------- | ------------- | ------------- |
-| LD     |               |               |               |
-| ST     |               |               |               |
-| SWP    | Type:Register | Type:Register | Type:Register |
-| MOV    | Any           | Any           |               | 
+| OPCODE | ARG1          | ARG2          | ARG3          |     |
+| ------ | ------------- | ------------- | ------------- | --- |
+| LD     |               |               |               |     |
+| ST     |               |               |               |     |
+| SWP    | Type:Register | Type:Register | Type:Register |     |
+| MOV    | Any           | Any           |               |     |
 
 _Memory OPCODE Descriptions:_
 
@@ -176,5 +176,35 @@ _Control Flow OPCODE Descriptions:_
 
 WDM -> Write Display Memory
 
+## Interpreter
+
+Any Interpreter must implement this Trait.  
+
+``` Rust
+trait Interpreter {
+	pub fn fetch(
+		program: ActiveProgram,
+		regs: Registers,
+	) -> Result<(), RizeError>;
+	pub fn decode(program: ActiveProgram) -> Result<(), RizeError>;
+	pub fn execute(
+		program: &mut ActiveProgram,
+		regs: Registers,
+		flags: Flags,
+		sysmem: SystemMemory,
+	) -> Result<(), RizeError>;
+}
+```
+
+### Fetcher  
+
+The `fetch` method needs to Fetch the Next Line from `program.contents`, based on the line stored in the Program Counter (`regs.get('pc'))`), and store it in `program.line`.  
 
 
+### Decoder
+
+The `decode` method needs to Split the Line that was just fetched into its Parts, and Parse them into `program.opcode`, and `program.argX` (X can be 1 - 3).  
+
+### Executer
+
+The `execute` method needs to perform the Operation in `program.opcode` with the operands in `program.argX`, using `regs`, `flags`, and `sysmem`.  
