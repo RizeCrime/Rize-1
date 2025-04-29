@@ -1,10 +1,12 @@
-use bevy::prelude::*;
-use collection::AzmInterpreter;
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-// mod display;
-// pub use display::*;
+use bevy::prelude::*;
+use collection::init_interpreters;
+
+use crate::types::{ActiveProgram, Registers};
 
 mod collection;
+mod systems;
 
 pub struct RizeOneInterpreterPlugin;
 
@@ -46,31 +48,28 @@ impl Plugin for RizeOneInterpreterPlugin {
         // ------------------------------------ //
         // Insert All Interpreters as Resources //
         // ------------------------------------ //
-        app.insert_resource::<InterpreterRes<AzmInterpreter, _>>(
-            InterpreterRes {
-                name: "RizeOne Interpreter",
-                ext: "azm",
-                interpreter: AzmInterpreter,
-            },
-        );
+        app.insert_resource::<InterpreterRes>(InterpreterRes::default());
+
+        app.add_systems(Startup, init_interpreters);
     }
 }
 
 #[derive(Debug, Default, Resource)]
 #[allow(dead_code)]
-pub struct InterpreterRes<T, S>
-where
-    T: Interpreter + Sync,
-    S: Into<String>,
-{
-    pub name: S,
-    pub ext: &'static str,
-    pub interpreter: T,
+pub struct InterpreterRes {
+    pub active: Option<Arc<dyn Interpreter>>,
+    pub all: HashMap<String, Arc<dyn Interpreter>>,
 }
 
 #[allow(dead_code)]
-pub trait Interpreter {
-    fn fetch();
-    fn decode();
-    fn execute();
+pub trait Interpreter: Debug + Send + Sync + 'static {
+    fn setup_registers(&self, registers: &mut Registers);
+    fn load_program(&self, program: &mut ActiveProgram);
+    fn fetch(
+        &self,
+        registers: &mut Registers,
+        program: &mut ActiveProgram,
+    ) -> Option<()>;
+    fn decode(&self);
+    fn execute(&self);
 }

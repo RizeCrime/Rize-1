@@ -334,6 +334,11 @@ impl Register {
         self.byte.write(data.into())?;
         Ok(())
     }
+
+    pub fn inc(&self) -> Result<(), RizeError> {
+        self.byte.write(self.byte.read()? + 1.into())?;
+        Ok(())
+    }
 }
 
 // --------- //

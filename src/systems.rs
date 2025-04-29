@@ -12,6 +12,7 @@ pub fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
+#[allow(dead_code)] // may need it again later?
 pub fn setup_registers(mut r_registers: ResMut<Registers>) {
     info!("Setting up Basic Registers...");
 

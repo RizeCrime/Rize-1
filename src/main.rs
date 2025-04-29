@@ -21,7 +21,7 @@ use bevy_screen_diagnostics::{
     ScreenFrameDiagnosticsPlugin,
 };
 use display::DisplayMemory;
-use systems::{setup_camera, setup_registers};
+use systems::setup_camera;
 use types::{ActiveProgram, AzmPrograms, ProgramSettings};
 
 mod constants;
@@ -91,7 +91,7 @@ impl Plugin for RizeOne {
             .insert_resource(ProgramSettings::default());
 
         app.add_systems(Startup, setup_camera);
-        app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);
+        // app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);
 
         app.add_plugins(ui::RizeOneUi);
         // app.add_plugins(interpreter::RizeOneInterpreter);
