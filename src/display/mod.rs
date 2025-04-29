@@ -26,13 +26,14 @@ pub struct DisplayMemory {
     pixels: [[[u8; 4]; DISPLAY_WIDTH]; DISPLAY_HEIGHT],
 }
 
+#[allow(dead_code)]
+#[allow(clippy::needless_range_loop)]
 impl DisplayMemory {
     pub fn init() -> Self {
         let mut pixels = [[[0; 4]; DISPLAY_WIDTH]; DISPLAY_HEIGHT];
         for x in 0..DISPLAY_WIDTH {
             for y in 0..DISPLAY_HEIGHT {
-                pixels[x][y] =
-                    [(x + 100) as u8, 0u8 + 100u8, (y + 100) as u8, 255u8];
+                pixels[x][y] = [(x + 100) as u8, 100u8, (y + 100) as u8, 255u8];
             }
         }
 
@@ -82,7 +83,7 @@ impl DisplayMemory {
                     y
                 )),
             })
-            .map(|pixel| *pixel)
+            .copied()
     }
 }
 

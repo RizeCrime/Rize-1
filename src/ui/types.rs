@@ -41,6 +41,7 @@ pub struct UiBit {
 }
 
 impl UiBit {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(value: u8, src: impl AsRef<str>, idx: usize) -> impl Bundle {
         (
             UiBit {

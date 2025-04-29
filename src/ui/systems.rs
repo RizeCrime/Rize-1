@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use bevy::image::{ImageSampler, ImageSamplerDescriptor};
@@ -14,14 +13,13 @@ use super::PixelDisplay;
 use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, PROGRAM_COUNTER};
 use crate::display::DisplayMemory;
 use crate::types::{
-    ActiveProgram, ArgType, AzmPrograms, Bits, OpCode, ProgramSettings,
-    Registers, DSB,
+    ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB,
 };
 use crate::CpuCycleStage;
 
-/// --------------- ///
-/// Startup Systems ///
-/// --------------- ///
+// --------------- //
+// Startup Systems //
+// --------------- //
 
 pub fn setup_ui_root(mut commands: Commands) {
     commands.spawn((UiRoot::init(), Name::new("ui-root")));
@@ -216,7 +214,7 @@ pub fn setup_instruction_ui(
 
         let text = commands
             .spawn((
-                Text::new(format!("{name}")),
+                Text::new(name.to_string()),
                 Name::new(format!("ui-{name}-text")),
                 UiElement,
             ))
@@ -460,8 +458,6 @@ pub fn setup_available_programs(
 
 pub fn setup_display(
     mut commands: Commands,
-    q_ui_root: Query<(Entity, &Name), With<UiElement>>,
-    mut r_pixel_display: Option<ResMut<PixelDisplay>>,
     mut r_images: ResMut<Assets<Image>>,
 ) {
     let image_size = bevy::render::render_resource::Extent3d {
@@ -469,7 +465,7 @@ pub fn setup_display(
         height: DISPLAY_HEIGHT as u32,
         depth_or_array_layers: 1,
     };
-    let data_size = (DISPLAY_WIDTH * DISPLAY_HEIGHT * 4) as usize;
+    let data_size: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT * 4;
     let mut image_data = vec![0u8; data_size];
 
     for i in (3..data_size).step_by(4) {
@@ -505,12 +501,12 @@ pub fn setup_display(
         .id();
 }
 
-/// -------------- ///
-/// Update Systems ///
-/// -------------- ///
+// -------------- //
+// Update Systems //
+// -------------- //
 
+#[allow(clippy::type_complexity)]
 pub fn update_control_panel(
-    mut r_active_program: ResMut<ActiveProgram>,
     mut r_program_settings: ResMut<ProgramSettings>,
     s_current_stage: Res<State<CpuCycleStage>>,
     mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
@@ -561,11 +557,13 @@ pub fn update_control_panel(
         if *interaction != Interaction::Pressed {
             return;
         }
-        if button_name.as_str().eq("ui-autostep-lines-button") {
-            if autostep_button.is_some() || autostep_input.is_some() {
+        if button_name.as_str().eq("ui-autostep-lines-button") &&
+            autostep_button.is_some() || autostep_input.is_some() {
 
-                let [(b_entity, mut b_visibility, b_name), (i_entity, mut i_visibility, i_name)] =
-                    q_autostep
+                let [
+                    (_b_entity, mut b_visibility, _b_name), 
+                    (_i_entity, mut i_visibility, _i_name)
+                ] = q_autostep
                         .get_many_mut([
                             autostep_button.unwrap(),
                             autostep_input.unwrap(),
@@ -575,7 +573,6 @@ pub fn update_control_panel(
                 *b_visibility = Visibility::Hidden;
                 *i_visibility = Visibility::Visible;
             }
-        }
         if button_name.as_str().eq("ui-reset-button") {
             s_next_stage.set(CpuCycleStage::Startup);
             return;
@@ -613,7 +610,6 @@ pub fn update_control_panel(
                     s_next_stage.set(CpuCycleStage::Fetch);
                 }
             }
-            return;
         }
     });
 
@@ -622,8 +618,8 @@ pub fn update_control_panel(
     er_input_submit.read().for_each(|event| {
         if event.entity == autostep_input.unwrap() {
             let [
-                (b_entity, mut b_visibility, b_name),
-                (i_entity, mut i_visibility, i_name),
+                (_b_entity, mut b_visibility, _b_name),
+                (_i_entity, mut i_visibility, _i_name),
             ] = q_autostep
                 .get_many_mut([
                     autostep_button.unwrap(),
@@ -641,6 +637,7 @@ pub fn update_control_panel(
     });
 }
 
+#[allow(clippy::type_complexity)]
 pub fn available_programs(
     r_programs: Res<AzmPrograms>,
     mut r_program: ResMut<ActiveProgram>,
@@ -663,8 +660,7 @@ pub fn available_programs(
 
         if qe
             .iter()
-            .find(|(_, name)| name.as_str() == format!("{file_stem}").as_str())
-            .is_some()
+            .any(|(_, name)| name.as_str() == file_stem.as_str())
         {
             continue;
         }
@@ -681,10 +677,10 @@ pub fn available_programs(
                     .build(),
                 border_color(None),
                 UiElement,
-                Name::new(format!("{}", file_stem.clone())),
+                Name::new(file_stem.clone()),
             ))
             .with_child((
-                Text::new(format!("{}", file_stem.clone())),
+                Text::new(file_stem.clone()),
                 TextLayout {
                     justify: JustifyText::Center,
                     ..Default::default()
@@ -725,7 +721,6 @@ pub fn available_programs(
 ///         - "ui-register-bit-{name}-{idx}"
 /// 2) update bit state with data from reg.read().iter().enumerate()
 pub fn update_registers(
-    mut commands: Commands,
     r_registers: Res<Registers>,
     mut q_ui: Query<(&mut Text, &Name), With<UiBit>>,
 ) {
@@ -819,7 +814,7 @@ pub fn update_instruction_ui(
 
 pub fn update_display(
     r_display: Res<DisplayMemory>,
-    mut r_pixel_display: ResMut<PixelDisplay>,
+    r_pixel_display: Res<PixelDisplay>,
     mut r_images: ResMut<Assets<Image>>,
 ) {
     for x in 0..DISPLAY_WIDTH {
@@ -833,26 +828,15 @@ pub fn update_display(
     }
 }
 
-/// ---------------- ///
-/// Helper Functions ///
-/// ---------------- ///
-
-fn bits_to_u16(bits: &[i8]) -> u16 {
-    let mut value: u16 = 0;
-    for &bit in bits {
-        value <<= 1;
-        if bit == 1 {
-            value |= 1;
-        }
-    }
-    value
-}
+// ---------------- //
+// Helper Functions //
+// ---------------- //
 
 fn border_color(color: Option<Color>) -> BorderColor {
     let Some(color) = color else {
-        return BorderColor(Color::from(Color::linear_rgba(
+        return BorderColor(Color::linear_rgba(
             255.0, 255.0, 255.0, 192.0,
-        )));
+        ));
     };
     BorderColor::from(color)
 }
@@ -861,6 +845,7 @@ pub struct NodeBuilder {
     node: Node,
 }
 
+#[allow(dead_code)]
 impl NodeBuilder {
     pub fn new() -> Self {
         Self {
@@ -1016,66 +1001,3 @@ fn create_ui_node(name: String, node: Node) -> impl Bundle {
 
     (node, border_color, name_component, UiElement)
 }
-
-fn create_ui_pixel(
-    x: usize,
-    y: usize,
-    mut r_meshes: &mut ResMut<Assets<Mesh>>,
-    mut r_materials: &mut ResMut<Assets<ColorMaterial>>,
-) -> (Mesh2d, MeshMaterial2d<ColorMaterial>, Transform, Name) {
-    let name = Name::new(format!("ui-pixel-{x}-{y}"));
-
-    let mut h_meshes = HashMap::new();
-    let mut h_materials = HashMap::new();
-
-    let h_mesh: &Handle<Mesh> = h_meshes
-        .entry("mesh-ui-pixel")
-        .or_insert_with(|| r_meshes.add(Rectangle::default()));
-
-    let h_material: &Handle<ColorMaterial> = h_materials
-        .entry(format!("material-ui-pixel-{x}-{y}"))
-        .or_insert_with(|| {
-            r_materials.add(ColorMaterial::from(Color::linear_rgba(
-                x as f32, 0.0, y as f32, 1.0,
-            )))
-        });
-
-    (
-        Mesh2d(h_mesh.clone()),
-        MeshMaterial2d(h_material.clone()),
-        Transform::default().with_scale(Vec3::splat(256.0)),
-        name,
-    )
-}
-
-fn create_random_border_color() -> BorderColor {
-    let mut rng = rand::rng(); // Use rng instead of thread_rng
-    let random_color = Color::linear_rgb(
-        rng.random_range(0.0..=1.0), // Use random_range for f32
-        rng.random_range(0.0..=1.0), // Use random_range for f32
-        rng.random_range(0.0..=1.0), // Use random_range for f32
-    );
-    BorderColor(random_color)
-}
-// Keep the old create_ui_node signature for now if needed, but mark as deprecated or remove
-/*
-fn create_ui_node(
-    name: &str,
-    margin: Option<UiRect>,
-    display: Option<Display>,
-    flex_direction: Option<FlexDirection>,
-) -> (Node, BorderColor, Name, UiElement) {
-    let builder = create_node_builder(margin, display, flex_direction);
-    create_ui_node_bundle(name, builder)
-}
-*/
-// Remove or comment out the old create_node_component as it's replaced by create_node_builder
-/*
-fn create_node_component(
-    margin: Option<UiRect>,
-    display: Option<Display>,
-    flex_direction: Option<FlexDirection>,
-) -> Node {
-    create_node_builder(margin, display, flex_direction).build()
-}
-*/

@@ -50,13 +50,14 @@ impl Plugin for RizeOneInterpreterPlugin {
             InterpreterRes {
                 name: "RizeOne Interpreter",
                 ext: "azm",
-                interpreter: AzmInterpreter::default(),
+                interpreter: AzmInterpreter,
             },
         );
     }
 }
 
 #[derive(Debug, Default, Resource)]
+#[allow(dead_code)]
 pub struct InterpreterRes<T, S>
 where
     T: Interpreter + Sync,
@@ -67,6 +68,7 @@ where
     pub interpreter: T,
 }
 
+#[allow(dead_code)]
 pub trait Interpreter {
     fn fetch();
     fn decode();

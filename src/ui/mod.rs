@@ -68,7 +68,7 @@ impl PixelDisplay {
         x: usize,
         y: usize,
         color: [u8; 4],
-        mut r_images: &mut ResMut<Assets<Image>>,
+        r_images: &mut ResMut<Assets<Image>>,
     ) -> Result<(), RizeError> {
         if x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT {
             return Err(RizeError {
