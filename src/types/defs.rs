@@ -63,8 +63,13 @@ pub struct ProgramSettings {
 }
 #[derive(Debug, Default, Resource)]
 pub struct ActiveProgram {
+    /// Contents of the entire program
     pub contents: String,
+    /// Symbols are stored in a HashMap, where:
+    /// - String: the symbol name
+    /// - usize: the line number in the program where the symbol is defined
     pub symbols: HashMap<String, usize>,
+    /// Last fetched program line
     pub line: String,
     pub opcode: OpCode,
     pub arg1: ArgType,
