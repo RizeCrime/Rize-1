@@ -90,29 +90,7 @@ impl Interpreter for AzmInterpreter {
                 return None;
             }
         }
-
-        program.symbols = program
-            .contents
-            .lines()
-            .enumerate()
-            .filter_map(|(n, line)| {
-                let trimmed_line = line.trim();
-                if trimmed_line.starts_with('.') {
-                    let symbol_name = &trimmed_line[1..];
-                    if symbol_name.len() > 0
-                        && symbol_name.len() <= 16
-                        && symbol_name.chars().all(char::is_alphabetic)
-                    {
-                        Some((symbol_name.to_string(), n + 1))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect();
-
+        
         Some(())
     }
     fn decode(&self, program: &mut ActiveProgram) {
