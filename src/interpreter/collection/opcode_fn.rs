@@ -3,8 +3,8 @@ use std::ops::Add;
 use crate::{
     constants::{FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO},
     types::{
-        ArgType, ByteOperations, ProgramArg, Register, Registers, RizeError,
-        RizeErrorType, SystemMemory, DSB,
+        ArgType, ByteOperations, ProgramArg, Register, Registers, RizeError, RizeErrorType,
+        SystemMemory, DSB,
     },
 };
 
@@ -18,30 +18,41 @@ pub fn get_operand_value(
         ArgType::Register(reg_name) => {
             // Unwrap, because no RizeErrorType expect RegisterGet error
             if let Some(register) = registers.get(&reg_name) {
-                return register.read()
-            }
-            else {
-                return Err(RizeError { type_: RizeErrorType::RegisterRead(format!("Cannot get a register named \"{}\"", reg_name)) })
+                return register.read();
+            } else {
+                return Err(RizeError {
+                    type_: RizeErrorType::RegisterRead(format!(
+                        "Cannot get a register named \"{}\"",
+                        reg_name
+                    )),
+                });
             }
         }
         ArgType::Immediate(imm) => return Ok(DSB::U16(*imm)),
         ArgType::MemAddr(addr) => {
             if let Some(byte) = memory.bytes.get(&(*addr as usize)) {
                 return byte.read();
-            }
-            else {
-                return Err(RizeError { type_: RizeErrorType::MemoryRead(format!("No byte found at address {}", addr)) })
+            } else {
+                return Err(RizeError {
+                    type_: RizeErrorType::MemoryRead(format!("No byte found at address {}", addr)),
+                });
             }
         }
-        ArgType::Symbol(sym) => return Err(RizeError {
-            type_: RizeErrorType::Decode(format!(
-                "Cannot use symbol '.{}' as an operand value.",
-                sym
-            ))
-        }),
-        ArgType::None | ArgType::Error => return Err(RizeError {
-            type_: RizeErrorType::Decode("Invalid/None ArgType encountered where value operand expected.".to_string()),
-        }),
+        ArgType::Symbol(sym) => {
+            return Err(RizeError {
+                type_: RizeErrorType::Decode(format!(
+                    "Cannot use symbol '.{}' as an operand value.",
+                    sym
+                )),
+            })
+        }
+        ArgType::None | ArgType::Error => {
+            return Err(RizeError {
+                type_: RizeErrorType::Decode(
+                    "Invalid/None ArgType encountered where value operand expected.".to_string(),
+                ),
+            })
+        }
     }
 }
 
@@ -80,16 +91,17 @@ fn determine_destination_register_mut<'a>(
                 }
             } else {
                 Err(RizeError {
-                        type_: RizeErrorType::Execute("Destination (arg1) must be a Register when arg3 is omitted."
-                            .to_string())
-                    })
+                    type_: RizeErrorType::Execute(
+                        "Destination (arg1) must be a Register when arg3 is omitted.".to_string(),
+                    ),
+                })
             }
         }
         _ => {
             return Err(RizeError {
                 type_: RizeErrorType::Decode(format!(
-                "Third argument (destination) must be a Register or omitted"
-            )),
+                    "Third argument (destination) must be a Register or omitted"
+                )),
             })
         }
     }
@@ -132,8 +144,7 @@ pub fn mov(
         }
         _ => Err(RizeError {
             type_: RizeErrorType::Execute(
-                "MOV destination (arg1) must be Register or MemAddr."
-                    .to_string(),
+                "MOV destination (arg1) must be Register or MemAddr.".to_string(),
             ),
         }),
     }
@@ -153,8 +164,7 @@ pub fn add(
     if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
-                "ADD requires the first argument (arg1) to be a register."
-                    .to_string(),
+                "ADD requires the first argument (arg1) to be a register.".to_string(),
             ),
         });
     }
@@ -163,21 +173,15 @@ pub fn add(
     let result = &(v1.clone().add(v2.clone()));
 
     // Determine destination register using helper
-    let (_dest_register, dest_name) = determine_destination_register_mut(
-        registers,
-        &arg1.arg_type,
-        &arg3_opt.arg_type,
-    )?;
+    let (_dest_register, dest_name) =
+        determine_destination_register_mut(registers, &arg1.arg_type, &arg3_opt.arg_type)?;
 
     // --- Set Flags ---
     // Zero Flag (fz): Set if result is 0
     registers
         .get(FLAG_ZERO)
         .ok_or_else(|| RizeError {
-            type_: RizeErrorType::RegisterRead(format!(
-                "Flag register '{}' not found",
-                FLAG_ZERO
-            )),
+            type_: RizeErrorType::RegisterRead(format!("Flag register '{}' not found", FLAG_ZERO)),
         })?
         .write(DSB::Flag(result.clone() == DSB::from(0)))?;
     // Negative Flag (fn): Set if MSB of result is 1
@@ -195,10 +199,7 @@ pub fn add(
     registers
         .get(FLAG_CARRY)
         .ok_or_else(|| RizeError {
-            type_: RizeErrorType::RegisterRead(format!(
-                "Flag register '{}' not found",
-                FLAG_CARRY
-            )),
+            type_: RizeErrorType::RegisterRead(format!("Flag register '{}' not found", FLAG_CARRY)),
         })?
         .write(DSB::Flag(carry))?;
     // Overflow Flag (fo): Set if signed addition resulted in overflow

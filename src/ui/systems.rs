@@ -6,15 +6,11 @@ use bevy::ui::FlexDirection::{Column, Row};
 use bevy_simple_text_input::{TextInput, TextInputSubmitEvent};
 use rand::Rng;
 
-use super::types::{
-    TogglePart, UiBit, UiConversion, UiElement, UiRegister, UiRoot, UiText,
-};
+use super::types::{TogglePart, UiBit, UiConversion, UiElement, UiRegister, UiRoot, UiText};
 use super::PixelDisplay;
 use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, PROGRAM_COUNTER};
 use crate::display::DisplayMemory;
-use crate::types::{
-    ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB
-};
+use crate::types::{ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB};
 use crate::CpuCycleStage;
 
 // --------------- //
@@ -31,9 +27,9 @@ pub fn setup_ui_registers(
     q_ui_root: Query<Entity, With<UiRoot>>,
 ) {
     let registers = r_registers.all();
-    let ui_root = q_ui_root.get_single().expect(
-        "Querying the Ui Root before setting it up should be impossible...",
-    );
+    let ui_root = q_ui_root
+        .get_single()
+        .expect("Querying the Ui Root before setting it up should be impossible...");
 
     let gp_container: Entity = commands
         .spawn((
@@ -154,23 +150,19 @@ pub fn setup_ui_registers(
             .add_children(&[register_row, register_conversions]);
         commands.entity(register_row).add_children(&ui_bits);
 
-        let target_container =
-            match register.name.as_str().chars().next().unwrap() {
-                'g' => gp_container,
-                'f' => flag_container,
-                // MAR, MDR, PC, IR
-                'm' | 'p' | 'i' => sp_container,
-                _ => misc_container,
-            };
+        let target_container = match register.name.as_str().chars().next().unwrap() {
+            'g' => gp_container,
+            'f' => flag_container,
+            // MAR, MDR, PC, IR
+            'm' | 'p' | 'i' => sp_container,
+            _ => misc_container,
+        };
 
         commands.entity(target_container).add_child(register_col);
     }
 }
 
-pub fn setup_instruction_ui(
-    mut commands: Commands,
-    q_ui_root: Query<Entity, With<UiRoot>>,
-) {
+pub fn setup_instruction_ui(mut commands: Commands, q_ui_root: Query<Entity, With<UiRoot>>) {
     let ui_root = q_ui_root.get_single().unwrap();
 
     let ui_instruction_container = commands
@@ -232,10 +224,7 @@ pub fn setup_instruction_ui(
     }
 }
 
-pub fn setup_control_panel(
-    mut commands: Commands,
-    q_ui_root: Query<Entity, With<UiRoot>>,
-) {
+pub fn setup_control_panel(mut commands: Commands, q_ui_root: Query<Entity, With<UiRoot>>) {
     let ui_root = q_ui_root.get_single().unwrap();
 
     let control_panel = commands
@@ -409,10 +398,7 @@ pub fn setup_control_panel(
     ]);
 }
 
-pub fn setup_available_programs(
-    mut commands: Commands,
-    q_ui_root: Query<Entity, With<UiRoot>>,
-) {
+pub fn setup_available_programs(mut commands: Commands, q_ui_root: Query<Entity, With<UiRoot>>) {
     let ui_root = q_ui_root.get_single().unwrap();
 
     let ui_programs = commands
@@ -456,10 +442,7 @@ pub fn setup_available_programs(
     commands.entity(ui_programs).add_child(program_container);
 }
 
-pub fn setup_display(
-    mut commands: Commands,
-    mut r_images: ResMut<Assets<Image>>,
-) {
+pub fn setup_display(mut commands: Commands, mut r_images: ResMut<Assets<Image>>) {
     let image_size = bevy::render::render_resource::Extent3d {
         width: DISPLAY_WIDTH as u32,
         height: DISPLAY_HEIGHT as u32,
@@ -494,8 +477,7 @@ pub fn setup_display(
                 image: h_image.clone(),
                 ..Default::default()
             },
-            Transform::from_xyz(0.0, 0.0, 0.0)
-                .with_scale(Vec3::new(16.0, 16.0, 1.0)),
+            Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::new(16.0, 16.0, 1.0)),
             Name::new("ui-display"),
         ))
         .id();
@@ -510,10 +492,7 @@ pub fn update_control_panel(
     mut r_program_settings: ResMut<ProgramSettings>,
     s_current_stage: Res<State<CpuCycleStage>>,
     mut s_next_stage: ResMut<NextState<CpuCycleStage>>,
-    q_button: Query<
-        (&Interaction, &Name),
-        (Changed<Interaction>, With<Button>),
-    >,
+    q_button: Query<(&Interaction, &Name), (Changed<Interaction>, With<Button>)>,
     mut q_text: Query<(&mut Text, &Name), With<UiText>>,
     mut q_autostep: Query<(Entity, &mut Visibility, &Name), With<TogglePart>>,
     mut er_input_submit: EventReader<TextInputSubmitEvent>,
@@ -557,22 +536,17 @@ pub fn update_control_panel(
         if *interaction != Interaction::Pressed {
             return;
         }
-        if button_name.as_str().eq("ui-autostep-lines-button") &&
-            autostep_button.is_some() || autostep_input.is_some() {
+        if button_name.as_str().eq("ui-autostep-lines-button") && autostep_button.is_some()
+            || autostep_input.is_some()
+        {
+            let [(_b_entity, mut b_visibility, _b_name), (_i_entity, mut i_visibility, _i_name)] =
+                q_autostep
+                    .get_many_mut([autostep_button.unwrap(), autostep_input.unwrap()])
+                    .unwrap();
 
-                let [
-                    (_b_entity, mut b_visibility, _b_name), 
-                    (_i_entity, mut i_visibility, _i_name)
-                ] = q_autostep
-                        .get_many_mut([
-                            autostep_button.unwrap(),
-                            autostep_input.unwrap(),
-                        ])
-                        .unwrap();
-
-                *b_visibility = Visibility::Hidden;
-                *i_visibility = Visibility::Visible;
-            }
+            *b_visibility = Visibility::Hidden;
+            *i_visibility = Visibility::Visible;
+        }
         if button_name.as_str().eq("ui-reset-button") {
             s_next_stage.set(CpuCycleStage::Startup);
             return;
@@ -617,15 +591,10 @@ pub fn update_control_panel(
 
     er_input_submit.read().for_each(|event| {
         if event.entity == autostep_input.unwrap() {
-            let [
-                (_b_entity, mut b_visibility, _b_name),
-                (_i_entity, mut i_visibility, _i_name),
-            ] = q_autostep
-                .get_many_mut([
-                    autostep_button.unwrap(),
-                    autostep_input.unwrap(),
-                ])
-                .unwrap();
+            let [(_b_entity, mut b_visibility, _b_name), (_i_entity, mut i_visibility, _i_name)] =
+                q_autostep
+                    .get_many_mut([autostep_button.unwrap(), autostep_input.unwrap()])
+                    .unwrap();
 
             if let Ok(value) = event.value.parse::<usize>() {
                 r_program_settings.autostep_lines = value;
@@ -655,8 +624,7 @@ pub fn available_programs(
     let available_programs: &Vec<(PathBuf, String)> = &r_programs.0;
 
     for program in available_programs {
-        let file_stem: String =
-            program.0.file_stem().unwrap().to_str().unwrap().to_string();
+        let file_stem: String = program.0.file_stem().unwrap().to_str().unwrap().to_string();
 
         if qe
             .iter()
@@ -702,11 +670,9 @@ pub fn available_programs(
         {
             if *interaction == Interaction::Pressed {
                 info!("Full Path: {:?}", path_buf);
-                let program_contents: std::fs::File =
-                    std::fs::File::open(path_buf).unwrap();
+                let program_contents: std::fs::File = std::fs::File::open(path_buf).unwrap();
 
-                r_program.as_mut().contents =
-                    std::io::read_to_string(&program_contents).unwrap();
+                r_program.as_mut().contents = std::io::read_to_string(&program_contents).unwrap();
 
                 // Reset Program Counter
                 r_registers.get(PROGRAM_COUNTER).unwrap().write(0).unwrap();
@@ -834,9 +800,7 @@ pub fn update_display(
 
 fn border_color(color: Option<Color>) -> BorderColor {
     let Some(color) = color else {
-        return BorderColor(Color::linear_rgba(
-            255.0, 255.0, 255.0, 192.0,
-        ));
+        return BorderColor(Color::linear_rgba(255.0, 255.0, 255.0, 192.0));
     };
     BorderColor::from(color)
 }

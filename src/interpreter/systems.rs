@@ -34,9 +34,7 @@ pub fn decode(
     interpreters: Res<InterpreterRes>,
 ) {
     let interpreter = interpreters.active.as_ref().unwrap();
-    if let Err(e) =
-        interpreter.decode(&mut program, &mut registers, &mut memory)
-    {
+    if let Err(e) = interpreter.decode(&mut program, &mut registers, &mut memory) {
         error!("Decoding Error ({:?})", e.type_,);
         sn_cpu.set(CpuCycleStage::Halt);
     }
@@ -55,7 +53,14 @@ pub fn execute(
     let interpreter = interpreters.active.as_ref().unwrap();
     // if None, assume Execution Error and Halt
     if interpreter
-        .execute(&mut program, &mut registers, &mut memory, &mut display_memory, &images, next_cpu_stage)
+        .execute(
+            &mut program,
+            &mut registers,
+            &mut memory,
+            &mut display_memory,
+            &images,
+            next_cpu_stage,
+        )
         .is_none()
     {
         sn_cpu.set(CpuCycleStage::Halt);

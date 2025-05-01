@@ -5,13 +5,13 @@ use bevy::prelude::*;
 
 use crate::{
     constants::{
-        AZZEMBLY_DIR, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO, N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER
+        AZZEMBLY_DIR, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO,
+        N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER,
     },
     types::{
-        ActiveProgram, ArgType, OpCode, Register, Registers,
-        RizeError, RizeErrorType, SystemMemory,
+        ActiveProgram, ArgType, OpCode, Register, Registers, RizeError, RizeErrorType, SystemMemory,
     },
-    CpuCycleStage, DisplayMemory, AzmPrograms,
+    AzmPrograms, CpuCycleStage, DisplayMemory,
 };
 
 use super::opcode_fn::{add, get_operand_value, mov};
@@ -63,24 +63,16 @@ impl Interpreter for AzmInterpreter {
 
     fn load_program(&self, program: &mut ActiveProgram) {}
 
-    fn fetch(
-        &self,
-        registers: &mut Registers,
-        program: &mut ActiveProgram,
-    ) -> Option<()> {
+    fn fetch(&self, registers: &mut Registers, program: &mut ActiveProgram) -> Option<()> {
         let pc: &mut Register = registers.get(PROGRAM_COUNTER).unwrap();
 
-        let mut lines_iter =
-            program.contents.lines().skip(pc.byte.as_decimal() as usize);
+        let mut lines_iter = program.contents.lines().skip(pc.byte.as_decimal() as usize);
 
         loop {
             if let Some(line) = lines_iter.next() {
                 let next = line.trim().to_string();
 
-                if next.is_empty()
-                    || next.starts_with('#')
-                    || next.starts_with('.')
-                {
+                if next.is_empty() || next.starts_with('#') || next.starts_with('.') {
                     pc.inc().ok()?;
                     continue;
                 }
@@ -97,7 +89,12 @@ impl Interpreter for AzmInterpreter {
 
         Some(())
     }
-    fn decode(&self, program: &mut ActiveProgram, registers: &mut Registers, memory: &mut SystemMemory) -> Result<(), RizeError> {
+    fn decode(
+        &self,
+        program: &mut ActiveProgram,
+        registers: &mut Registers,
+        memory: &mut SystemMemory,
+    ) -> Result<(), RizeError> {
         let parts: Vec<&str> = program.line.split_whitespace().collect();
         let raw_opcode = parts.get(0).copied().unwrap_or_default().to_string();
         let raw_arg1 = parts.get(1).copied().unwrap_or_default().to_string();
@@ -135,9 +132,21 @@ impl Interpreter for AzmInterpreter {
         program.arg3.arg_type = ArgType::from_string(raw_arg3);
 
         // Validate arguments (and save their values)
-        program.arg1.value = Some(get_operand_value(registers, memory, &program.arg1.arg_type)?);
-        program.arg2.value = Some(get_operand_value(registers, memory, &program.arg2.arg_type)?);
-        program.arg3.value = Some(get_operand_value(registers, memory, &program.arg3.arg_type)?);
+        program.arg1.value = Some(get_operand_value(
+            registers,
+            memory,
+            &program.arg1.arg_type,
+        )?);
+        program.arg2.value = Some(get_operand_value(
+            registers,
+            memory,
+            &program.arg2.arg_type,
+        )?);
+        program.arg3.value = Some(get_operand_value(
+            registers,
+            memory,
+            &program.arg3.arg_type,
+        )?);
         Ok(())
     }
     fn execute(
@@ -151,9 +160,7 @@ impl Interpreter for AzmInterpreter {
     ) -> Option<()> {
         let execution_result = match program.opcode {
             OpCode::MOV => mov(&program.arg1, &program.arg2, registers, memory),
-            OpCode::ADD => {
-                add(&program.arg1, &program.arg2, &program.arg3, registers)
-            }
+            OpCode::ADD => add(&program.arg1, &program.arg2, &program.arg3, registers),
             //         OpCode::SUB => {
             //             sub(
             //                 &program.arg1,
@@ -364,13 +371,9 @@ impl Interpreter for AzmInterpreter {
         // Handle the result of the execution
         if let Err(e) = execution_result {
             error!(
-                    "Execution Error ({:?}), (Op: {:?}, Args: '{:?}', '{:?}', '{:?}')",
-                    e.type_,
-                    program.opcode,
-                    program.arg1,
-                    program.arg2,
-                    program.arg3
-                );
+                "Execution Error ({:?}), (Op: {:?}, Args: '{:?}', '{:?}', '{:?}')",
+                e.type_, program.opcode, program.arg1, program.arg2, program.arg3
+            );
             return None;
         }
         Some(())

@@ -7,8 +7,8 @@ use std::{
 use crate::{
     constants::CPU_BITTAGE,
     types::{
-        Bits, Byte, ByteOpResult, ByteOperations, OpCode, Register, Registers,
-        RizeError, RizeErrorType, DSB,
+        Bits, Byte, ByteOpResult, ByteOperations, OpCode, Register, Registers, RizeError,
+        RizeErrorType, DSB,
     },
 };
 
@@ -143,7 +143,7 @@ impl BitAnd<DSB> for DSB {
 
 impl Shr<DSB> for DSB {
     type Output = DSB;
-    
+
     fn shr(self, other: DSB) -> Self::Output {
         let a = self.as_u128();
         let b = other.as_u128();
@@ -156,7 +156,7 @@ impl Shr<DSB> for DSB {
 
 impl Shl<DSB> for DSB {
     type Output = DSB;
-    
+
     fn shl(self, other: DSB) -> Self::Output {
         let a = self.as_u128();
         let b = other.as_u128();
@@ -193,16 +193,21 @@ impl DSB {
     pub fn as_utf8(&self) -> String {
         match self {
             DSB::Flag(f) => if *f { "True" } else { "False" }.to_string(),
-            DSB::U8(n) => std::char::from_u32(*n as u32)
-                .map_or_else(|| String::from("�"), |c| c.to_string()),
-            DSB::U16(n) => std::char::from_u32(*n as u32)
-                .map_or_else(|| String::from("�"), |c| c.to_string()),
-            DSB::U32(n) => std::char::from_u32(*n)
-                .map_or_else(|| String::from("�"), |c| c.to_string()),
-            DSB::U64(n) => std::char::from_u32(*n as u32)
-                .map_or_else(|| String::from("�"), |c| c.to_string()),
-            DSB::U128(n) => std::char::from_u32(*n as u32)
-                .map_or_else(|| String::from("�"), |c| c.to_string()),
+            DSB::U8(n) => {
+                std::char::from_u32(*n as u32).map_or_else(|| String::from("�"), |c| c.to_string())
+            }
+            DSB::U16(n) => {
+                std::char::from_u32(*n as u32).map_or_else(|| String::from("�"), |c| c.to_string())
+            }
+            DSB::U32(n) => {
+                std::char::from_u32(*n).map_or_else(|| String::from("�"), |c| c.to_string())
+            }
+            DSB::U64(n) => {
+                std::char::from_u32(*n as u32).map_or_else(|| String::from("�"), |c| c.to_string())
+            }
+            DSB::U128(n) => {
+                std::char::from_u32(*n as u32).map_or_else(|| String::from("�"), |c| c.to_string())
+            }
         }
     }
 
@@ -512,9 +517,7 @@ impl ArgType {
 
         // Rule 4: Symbol
         if let Some(symbol_name) = arg.strip_prefix('.') {
-            if !symbol_name.is_empty()
-                && symbol_name.chars().all(char::is_alphabetic)
-            {
+            if !symbol_name.is_empty() && symbol_name.chars().all(char::is_alphabetic) {
                 return ArgType::Symbol(symbol_name.to_string());
             }
             // If it starts with '.' but isn't a valid symbol format

@@ -69,11 +69,7 @@ pub struct InterpreterRes {
 pub trait Interpreter: Debug + Send + Sync + 'static {
     fn setup_registers(&self, registers: &mut Registers);
     fn load_program(&self, program: &mut ActiveProgram);
-    fn fetch(
-        &self,
-        registers: &mut Registers,
-        program: &mut ActiveProgram,
-    ) -> Option<()>;
+    fn fetch(&self, registers: &mut Registers, program: &mut ActiveProgram) -> Option<()>;
     fn decode(
         &self,
         program: &mut ActiveProgram,

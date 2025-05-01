@@ -40,12 +40,7 @@ impl DisplayMemory {
         Self { pixels }
     }
 
-    pub fn set_pixel(
-        &mut self,
-        x: u8,
-        y: u8,
-        color: [u8; 4],
-    ) -> Result<(), RizeError> {
+    pub fn set_pixel(&mut self, x: u8, y: u8, color: [u8; 4]) -> Result<(), RizeError> {
         if (x as usize) >= DISPLAY_WIDTH {
             return Err(RizeError {
                 type_: RizeErrorType::Display(format!(
@@ -71,17 +66,11 @@ impl DisplayMemory {
         self.pixels
             .get(x as usize)
             .ok_or_else(|| RizeError {
-                type_: RizeErrorType::Display(format!(
-                    "X coordinate {} out of bounds",
-                    x
-                )),
+                type_: RizeErrorType::Display(format!("X coordinate {} out of bounds", x)),
             })?
             .get(y as usize)
             .ok_or_else(|| RizeError {
-                type_: RizeErrorType::Display(format!(
-                    "Y coordinate {} out of bounds",
-                    y
-                )),
+                type_: RizeErrorType::Display(format!("Y coordinate {} out of bounds", y)),
             })
             .copied()
     }

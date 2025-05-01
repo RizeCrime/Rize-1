@@ -17,8 +17,7 @@ use bevy_inspector_egui::quick::{
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 #[cfg(debug_assertions)]
 use bevy_screen_diagnostics::{
-    ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin,
-    ScreenFrameDiagnosticsPlugin,
+    ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin, ScreenFrameDiagnosticsPlugin,
 };
 use display::DisplayMemory;
 use systems::setup_camera;
