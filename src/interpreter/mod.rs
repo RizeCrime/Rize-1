@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use bevy::prelude::*;
 use collection::init_interpreters;
+use systems::{decode, execute, fetch};
 
 use crate::{
     display::DisplayMemory,
@@ -42,12 +43,12 @@ impl Plugin for RizeOneInterpreterPlugin {
         //     app.add_systems(OnEnter(CpuCycleStage::Execute), execute);
 
         //     // add systems as Update, for auto-stepping
-        //     app.add_systems(
-        //         Update,
-        //         // (fetch, decode, execute)
-        //         // .chain()
-        //         (auto_step).run_if(in_state(CpuCycleStage::AutoStep)),
-        //     );
+            app.add_systems(
+                Update,
+                (fetch, decode, execute)
+                .chain()
+                // (auto_step).run_if(in_state(CpuCycleStage::AutoStep)),
+            );
 
         // ------------------------------------ //
         // Insert All Interpreters as Resources //

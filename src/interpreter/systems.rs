@@ -3,7 +3,8 @@
 use bevy::prelude::*;
 
 use crate::{
-    types::{ActiveProgram, Registers},
+    display::DisplayMemory,
+    types::{ActiveProgram, Registers, SystemMemory},
     CpuCycleStage,
 };
 
@@ -26,8 +27,37 @@ pub fn fetch(
 }
 
 pub fn decode(
-    mut r_active_program: ResMut<ActiveProgram>,
+    mut memory: ResMut<SystemMemory>,
+    mut registers: ResMut<Registers>,
+    mut program: ResMut<ActiveProgram>,
+    mut sn_cpu: ResMut<NextState<CpuCycleStage>>,
     interpreters: Res<InterpreterRes>,
 ) {
     let interpreter = interpreters.active.as_ref().unwrap();
+    if let Err(e) =
+        interpreter.decode(&mut program, &mut registers, &mut memory)
+    {
+        error!("Decoding Error ({:?})", e.type_,);
+        sn_cpu.set(CpuCycleStage::Halt);
+    }
+}
+
+pub fn execute(
+    interpreters: Res<InterpreterRes>,
+    mut registers: ResMut<Registers>,
+    mut program: ResMut<ActiveProgram>,
+    mut memory: ResMut<SystemMemory>,
+    mut display_memory: ResMut<DisplayMemory>,
+    images: Res<Assets<Image>>,
+    mut sn_cpu: ResMut<NextState<CpuCycleStage>>,
+    mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
+) {
+    let interpreter = interpreters.active.as_ref().unwrap();
+    // if None, assume EOF and Halt
+    if interpreter
+        .execute(&mut program, &mut registers, &mut memory, &mut display_memory, &images, next_cpu_stage)
+        .is_none()
+    {
+        sn_cpu.set(CpuCycleStage::Halt);
+    }
 }

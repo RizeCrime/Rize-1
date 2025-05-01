@@ -5,14 +5,13 @@ use bevy::prelude::*;
 
 use crate::{
     constants::{
-        FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO,
-        N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER,
+        AZZEMBLY_DIR, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO, N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER
     },
     types::{
         ActiveProgram, ArgType, OpCode, Register, Registers,
         RizeError, RizeErrorType, SystemMemory,
     },
-    CpuCycleStage, DisplayMemory,
+    CpuCycleStage, DisplayMemory, AzmPrograms,
 };
 
 use super::opcode_fn::{add, get_operand_value, mov};

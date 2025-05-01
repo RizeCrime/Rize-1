@@ -144,7 +144,7 @@ pub enum ArgType {
 
 #[derive(Resource)]
 #[allow(dead_code)]
-pub struct FileCheckTimer(Timer);
+pub struct FileCheckTimer(pub Timer);
 
 #[derive(Debug, Default, Resource)]
 pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
