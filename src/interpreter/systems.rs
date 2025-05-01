@@ -53,7 +53,7 @@ pub fn execute(
     mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
 ) {
     let interpreter = interpreters.active.as_ref().unwrap();
-    // if None, assume EOF and Halt
+    // if None, assume Execution Error and Halt
     if interpreter
         .execute(&mut program, &mut registers, &mut memory, &mut display_memory, &images, next_cpu_stage)
         .is_none()
