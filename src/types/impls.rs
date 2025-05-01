@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, BitAnd, Div, Mul, Shl, Shr, Sub},
     sync::{Arc, Mutex},
 };
 
@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{ArgType, ProgramArg};
+use super::ArgType;
 
 // --- //
 // DSB //
@@ -123,6 +123,45 @@ impl Div<DSB> for DSB {
         let b = other.as_u128();
 
         let result = a / b;
+
+        result.into()
+    }
+}
+
+impl BitAnd<DSB> for DSB {
+    type Output = DSB;
+
+    fn bitand(self, other: Self) -> Self::Output {
+        let a = self.as_u128();
+        let b = other.as_u128();
+
+        let result = a & b;
+
+        result.into()
+    }
+}
+
+impl Shr<DSB> for DSB {
+    type Output = DSB;
+    
+    fn shr(self, other: DSB) -> Self::Output {
+        let a = self.as_u128();
+        let b = other.as_u128();
+
+        let result = a >> b;
+
+        result.into()
+    }
+}
+
+impl Shl<DSB> for DSB {
+    type Output = DSB;
+    
+    fn shl(self, other: DSB) -> Self::Output {
+        let a = self.as_u128();
+        let b = other.as_u128();
+
+        let result = a << b;
 
         result.into()
     }

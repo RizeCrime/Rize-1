@@ -13,7 +13,7 @@ use super::PixelDisplay;
 use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, PROGRAM_COUNTER};
 use crate::display::DisplayMemory;
 use crate::types::{
-    ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB,
+    ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB
 };
 use crate::CpuCycleStage;
 

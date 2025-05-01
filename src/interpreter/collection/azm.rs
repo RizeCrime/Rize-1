@@ -9,13 +9,13 @@ use crate::{
         N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER,
     },
     types::{
-        ActiveProgram, ArgType, OpCode, Register, Registers, RizeError, SystemMemory
+        ActiveProgram, ArgType, OpCode, Register, Registers,
+        RizeError, RizeErrorType, SystemMemory,
     },
-    CpuCycleStage,
-    DisplayMemory,
+    CpuCycleStage, DisplayMemory,
 };
 
-use super::opcode_fn::get_operand_value;
+use super::opcode_fn::{add, get_operand_value, mov};
 
 use super::super::Interpreter;
 
@@ -150,239 +150,230 @@ impl Interpreter for AzmInterpreter {
         images: &Assets<Image>,
         mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
     ) -> Option<()> {
-        //     let execution_result = match program.opcode {
-        //         OpCode::MOV => mov(
-        //             &program.arg1,
-        //             &program.arg2,
-        //             registers,
-        //             memory,
-        //         ),
-        //         OpCode::ADD => {
-        //             add(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //             )
-        //         }
-        //         OpCode::SUB => {
-        //             sub(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //                 &r_memory,
-        //             )
-        //         }
-        //         OpCode::MUL => {
-        //             mul(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //                 &r_memory,
-        //             )
-        //         }
-        //         OpCode::DIV => {
-        //             div(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //                 &r_memory,
-        //             )
-        //         }
-        //         OpCode::ST => st(registers, memory),
-        //         OpCode::LD => ld(registers, memory),
-        //         OpCode::AND => {
-        //             and(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //             )
-        //         }
-        //         OpCode::OR => {
-        //             let arg3_option = if program.arg3.is_empty() {
-        //                 None
-        //             } else {
-        //                 Some(program.arg3.clone())
-        //             };
-        //             or(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //             )
-        //         }
-        //         OpCode::XOR => {
-        //             let arg3_option = if program.arg3.is_empty() {
-        //                 None
-        //             } else {
-        //                 Some(program.arg3.clone())
-        //             };
-        //             xor(
-        //                 &program.arg1,
-        //                 &program.arg2,
-        //                 &arg3_option,
-        //                 registers,
-        //             )
-        //         }
-        //         OpCode::NOT => not(&program.arg1, registers),
-        //         OpCode::SHL => {
-        //             shl(&program.arg1, &program.arg2, registers)
-        //         }
-        //         OpCode::SHR => {
-        //             shr(&program.arg1, &program.arg2, registers)
-        //         }
-        //         OpCode::HALT => {
-        //             info!("Halting CPU!");
-        //             next_cpu_stage.set(CpuCycleStage::Halt);
-        //             Ok(())
-        //         }
-        //         OpCode::WDM => wdm(
-        //             &program.arg1,
-        //             &program.arg2,
-        //             &program.arg3,
-        //             r_display_memory,
-        //             registers,
-        //             memory,
-        //         ),
-        //         OpCode::JMP => {
-        //             let target_symbol =
-        //                 program.arg1.strip_prefix('.').unwrap_or_default();
-        //             let target_line = program
-        //                 .symbols
-        //                 .get(target_symbol)
-        //                 .copied()
-        //                 .unwrap_or_default();
-        //             if target_line == 0 {
-        //                 Err(RizeError {
-        //                     type_: RizeErrorType::Execute,
-        //                     message: format!(
-        //                         "JMP target symbol '.{}' not found.",
-        //                         target_symbol
-        //                     ),
-        //                 })
-        //             } else {
-        //                 program.line = target_line;
-        //                 match get_register_mut(registers, PROGRAM_COUNTER) {
-        //                     Ok(pc_reg) => pc_reg.write_section_u16(target_line as u16),
-        //                     Err(e) => Err(e),
-        //                 }
-        //             }
-        //         }
-        //         OpCode::JIZ => {
-        //             // Read flag, handling Result
-        //             match get_operand_value(
-        //                 registers,
-        //                 &Memory::new(),
-        //                 &ArgType::Register(FLAG_ZERO.to_string()),
-        //             ) {
-        //                 Ok(zero_flag) => {
-        //                     if zero_flag == 1 {
-        //                         // Jump logic
-        //                         let target_symbol = program
-        //                             .arg1
-        //                             .raw
-        //                             .strip_prefix('.')
-        //                             .unwrap_or_default();
-        //                         let target_line = program
-        //                             .symbols
-        //                             .get(target_symbol)
-        //                             .copied()
-        //                             .unwrap_or_default();
-        //                         if target_line == 0 {
-        //                             Err(RizeError {
-        //                                 type_: RizeErrorType::Execute,
-        //                                 message: format!(
-        //                                     "JIZ target symbol '.{}' not found.",
-        //                                     target_symbol
-        //                                 ),
-        //                             })
-        //                         } else {
-        //                             program.line = target_line;
-        //                             match get_register_mut(registers, PROGRAM_COUNTER) {
-        //                                 Ok(pc_reg) => {
-        //                                     pc_reg.write_section_u16(target_line as u16)
-        //                                 }
-        //                                 Err(e) => Err(e),
-        //                             }
-        //                         }
-        //                     } else {
-        //                         // Flag is zero, don't jump
-        //                         Ok(())
-        //                     }
-        //                 }
-        //                 Err(e) => Err(e), // Propagate flag read error
-        //             }
-        //         }
-        //         OpCode::JIN => {
-        //             // Read flag, handling Result
-        //             match get_operand_value(
-        //                 registers,
-        //                 &Memory::new(),
-        //                 &ArgType::Register(FLAG_NEGATIVE.to_string()),
-        //             ) {
-        //                 Ok(negative_flag) => {
-        //                     if negative_flag == 1 {
-        //                         // Jump logic
-        //                         let target_symbol = program
-        //                             .arg1
-        //                             .strip_prefix('.')
-        //                             .unwrap_or_default();
-        //                         let target_line = program
-        //                             .symbols
-        //                             .get(target_symbol)
-        //                             .copied()
-        //                             .unwrap_or_default();
-        //                         if target_line == 0 {
-        //                             Err(RizeError {
-        //                                 type_: RizeErrorType::Execute,
-        //                                 message: format!(
-        //                                     "JIN target symbol '.{}' not found.",
-        //                                     target_symbol
-        //                                 ),
-        //                             })
-        //                         } else {
-        //                             program.line = target_line;
-        //                             match get_register_mut(registers, PROGRAM_COUNTER) {
-        //                                 Ok(pc_reg) => {
-        //                                     pc_reg.write_section_u16(target_line as u16)
-        //                                 }
-        //                                 Err(e) => Err(e),
-        //                             }
-        //                         }
-        //                     } else {
-        //                         // Flag is zero, don't jump
-        //                         Ok(())
-        //                     }
-        //                 }
-        //                 Err(e) => Err(e), // Propagate flag read error
-        //             }
-        //         }
-        //         _ => {
-        //             warn!("OpCode {:?} not yet implemented!", program.opcode);
-        //             Err(RizeError {
-        //                 type_: RizeErrorType::Execute,
-        //                 message: format!("OpCode {:?} not implemented", program.opcode),
-        //             })
-        //         }
-        //     };
+        let execution_result = match program.opcode {
+            OpCode::MOV => mov(&program.arg1, &program.arg2, registers, memory),
+            OpCode::ADD => {
+                add(&program.arg1, &program.arg2, &program.arg3, registers)
+            }
+            //         OpCode::SUB => {
+            //             sub(
+            //                 &program.arg1,
+            //                 &program.arg2,
+            //                 &arg3_option,
+            //                 registers,
+            //                 &r_memory,
+            //             )
+            //         }
+            //         OpCode::MUL => {
+            //             mul(
+            //                 &program.arg1,
+            //                 &program.arg2,
+            //                 &arg3_option,
+            //                 registers,
+            //                 &r_memory,
+            //             )
+            //         }
+            //         OpCode::DIV => {
+            //             div(
+            //                 &program.arg1,
+            //                 &program.arg2,
+            //                 &arg3_option,
+            //                 registers,
+            //                 &r_memory,
+            //             )
+            //         }
+            //         OpCode::ST => st(registers, memory),
+            //         OpCode::LD => ld(registers, memory),
+            //         OpCode::AND => {
+            //             and(
+            //                 &program.arg1,
+            //                 &program.arg2,
+            //                 &arg3_option,
+            //                 registers,
+            //             )
+            //         }
+            //         OpCode::OR => {
+            //             let arg3_option = if program.arg3.is_empty() {
+            //                 None
+            //             } else {
+            //                 Some(program.arg3.clone())
+            //             };
+            //             or(
+            //                 &program.arg1,
+            //                 &program.arg2,
+            //                 &arg3_option,
+            //                 registers,
+            //             )
+            //         }
+            //         OpCode::XOR => {
+            //             let arg3_option = if program.arg3.is_empty() {
+            //                 None
+            //             } else {
+            //                 Some(program.arg3.clone())
+            //             };
+            //             xor(
+            //                 &program.arg1,
+            //                 &program.arg2,
+            //                 &arg3_option,
+            //                 registers,
+            //             )
+            //         }
+            //         OpCode::NOT => not(&program.arg1, registers),
+            //         OpCode::SHL => {
+            //             shl(&program.arg1, &program.arg2, registers)
+            //         }
+            //         OpCode::SHR => {
+            //             shr(&program.arg1, &program.arg2, registers)
+            //         }
+            //         OpCode::HALT => {
+            //             info!("Halting CPU!");
+            //             next_cpu_stage.set(CpuCycleStage::Halt);
+            //             Ok(())
+            //         }
+            //         OpCode::WDM => wdm(
+            //             &program.arg1,
+            //             &program.arg2,
+            //             &program.arg3,
+            //             r_display_memory,
+            //             registers,
+            //             memory,
+            //         ),
+            //         OpCode::JMP => {
+            //             let target_symbol =
+            //                 program.arg1.strip_prefix('.').unwrap_or_default();
+            //             let target_line = program
+            //                 .symbols
+            //                 .get(target_symbol)
+            //                 .copied()
+            //                 .unwrap_or_default();
+            //             if target_line == 0 {
+            //                 Err(RizeError {
+            //                     type_: RizeErrorType::Execute,
+            //                     message: format!(
+            //                         "JMP target symbol '.{}' not found.",
+            //                         target_symbol
+            //                     ),
+            //                 })
+            //             } else {
+            //                 program.line = target_line;
+            //                 match get_register_mut(registers, PROGRAM_COUNTER) {
+            //                     Ok(pc_reg) => pc_reg.write_section_u16(target_line as u16),
+            //                     Err(e) => Err(e),
+            //                 }
+            //             }
+            //         }
+            //         OpCode::JIZ => {
+            //             // Read flag, handling Result
+            //             match get_operand_value(
+            //                 registers,
+            //                 &Memory::new(),
+            //                 &ArgType::Register(FLAG_ZERO.to_string()),
+            //             ) {
+            //                 Ok(zero_flag) => {
+            //                     if zero_flag == 1 {
+            //                         // Jump logic
+            //                         let target_symbol = program
+            //                             .arg1
+            //                             .raw
+            //                             .strip_prefix('.')
+            //                             .unwrap_or_default();
+            //                         let target_line = program
+            //                             .symbols
+            //                             .get(target_symbol)
+            //                             .copied()
+            //                             .unwrap_or_default();
+            //                         if target_line == 0 {
+            //                             Err(RizeError {
+            //                                 type_: RizeErrorType::Execute,
+            //                                 message: format!(
+            //                                     "JIZ target symbol '.{}' not found.",
+            //                                     target_symbol
+            //                                 ),
+            //                             })
+            //                         } else {
+            //                             program.line = target_line;
+            //                             match get_register_mut(registers, PROGRAM_COUNTER) {
+            //                                 Ok(pc_reg) => {
+            //                                     pc_reg.write_section_u16(target_line as u16)
+            //                                 }
+            //                                 Err(e) => Err(e),
+            //                             }
+            //                         }
+            //                     } else {
+            //                         // Flag is zero, don't jump
+            //                         Ok(())
+            //                     }
+            //                 }
+            //                 Err(e) => Err(e), // Propagate flag read error
+            //             }
+            //         }
+            //         OpCode::JIN => {
+            //             // Read flag, handling Result
+            //             match get_operand_value(
+            //                 registers,
+            //                 &Memory::new(),
+            //                 &ArgType::Register(FLAG_NEGATIVE.to_string()),
+            //             ) {
+            //                 Ok(negative_flag) => {
+            //                     if negative_flag == 1 {
+            //                         // Jump logic
+            //                         let target_symbol = program
+            //                             .arg1
+            //                             .strip_prefix('.')
+            //                             .unwrap_or_default();
+            //                         let target_line = program
+            //                             .symbols
+            //                             .get(target_symbol)
+            //                             .copied()
+            //                             .unwrap_or_default();
+            //                         if target_line == 0 {
+            //                             Err(RizeError {
+            //                                 type_: RizeErrorType::Execute,
+            //                                 message: format!(
+            //                                     "JIN target symbol '.{}' not found.",
+            //                                     target_symbol
+            //                                 ),
+            //                             })
+            //                         } else {
+            //                             program.line = target_line;
+            //                             match get_register_mut(registers, PROGRAM_COUNTER) {
+            //                                 Ok(pc_reg) => {
+            //                                     pc_reg.write_section_u16(target_line as u16)
+            //                                 }
+            //                                 Err(e) => Err(e),
+            //                             }
+            //                         }
+            //                     } else {
+            //                         // Flag is zero, don't jump
+            //                         Ok(())
+            //                     }
+            //                 }
+            //                 Err(e) => Err(e), // Propagate flag read error
+            //             }
+            //         }
+            _ => {
+                warn!("OpCode {:?} not yet implemented!", program.opcode);
+                Err(RizeError {
+                    type_: RizeErrorType::Execute(format!(
+                        "OpCode {:?} not implemented",
+                        program.opcode
+                    )),
+                })
+            }
+        };
 
-        //     // Handle the result of the execution
-        //     if let Err(e) = execution_result {
-        //         error!(
-        //             "Execution Error ({:?}): {} (Op: {:?}, Args: '{:?}', '{:?}', '{:?}')",
-        //             e.type_,
-        //             e.message,
-        //             program.opcode,
-        //             program.arg1,
-        //             program.arg2,
-        //             program.arg3
-        //         );
-        //         return None
-        //     }
+        // Handle the result of the execution
+        if let Err(e) = execution_result {
+            error!(
+                    "Execution Error ({:?}), (Op: {:?}, Args: '{:?}', '{:?}', '{:?}')",
+                    e.type_,
+                    program.opcode,
+                    program.arg1,
+                    program.arg2,
+                    program.arg3
+                );
+            return None;
+        }
         Some(())
     }
 }

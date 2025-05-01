@@ -1,4 +1,12 @@
-use crate::types::{ArgType, ByteOperations, Registers, RizeError, RizeErrorType, SystemMemory, DSB};
+use std::ops::Add;
+
+use crate::{
+    constants::{FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO},
+    types::{
+        ArgType, ByteOperations, ProgramArg, Register, Registers, RizeError,
+        RizeErrorType, SystemMemory, DSB,
+    },
+};
 
 /// Determines the value of an operand (Register, Immediate, or Memory Address).
 pub fn get_operand_value(
@@ -37,191 +45,190 @@ pub fn get_operand_value(
     }
 }
 
-// /// Determines the destination register for instructions with an optional 3rd argument.
-// /// Returns a mutable reference to the destination register.
-// /// UPDATED: Also returns the name of the destination register as a String.
-// fn determine_destination_register_mut<'a>(
-//     registers: &'a mut Registers,
-//     arg1: &ArgType,
-//     arg3_opt: &Option<ArgType>,
-// ) -> Result<(&'a mut Register, String), RizeError> {
-//     match arg3_opt {
-//         // If arg3 is provided and is a register
-//         Some(ArgType::Register(reg3_name)) => {
-//             let reg_ref = get_register_mut(registers, reg3_name)?;
-//             Ok((reg_ref, reg3_name.clone()))
-//         }
-//         // If arg3 is None or a comment, use arg1 (which must be a register)
-//         None | Some(ArgType::None) => {
-//             if let ArgType::Register(reg1_name) = arg1 {
-//                 let reg_ref = get_register_mut(registers, reg1_name)?;
-//                 Ok((reg_ref, reg1_name.clone()))
-//             } else {
-//                 Err(RizeError {
-//                     type_: RizeErrorType::Execute,
-//                     message: "Destination (arg1) must be a Register when arg3 is omitted."
-//                         .to_string(),
-//                 })
-//             }
-//         }
-//         // If arg3 is provided but is not a register
-//         Some(_) => Err(RizeError {
-//             type_: RizeErrorType::Execute,
-//             message:
-//                 "Third argument (destination) must be a Register or omitted."
-//                     .to_string(),
-//         }),
-//     }
-// }
+///  Determines the destination register for instructions with an optional 3rd argument.
+///  Returns a mutable reference to the destination register.
+///  UPDATED: Also returns the name of the destination register as a String.
+fn determine_destination_register_mut<'a>(
+    registers: &'a mut Registers,
+    arg1: &ArgType,
+    arg3: &ArgType,
+) -> Result<(&'a mut Register, String), RizeError> {
+    match arg3 {
+        ArgType::Register(reg3_name) => {
+            if let Some(reg_ref) = registers.get(&reg3_name) {
+                return Ok((reg_ref, reg3_name.clone()));
+            } else {
+                return Err(RizeError {
+                    type_: RizeErrorType::RegisterRead(format!(
+                        "Cannot get a register named \"{}\"",
+                        reg3_name
+                    )),
+                });
+            }
+        }
+        ArgType::None => {
+            if let ArgType::Register(reg1_name) = arg1 {
+                if let Some(reg_ref) = registers.get(&reg1_name) {
+                    return Ok((reg_ref, reg1_name.clone()));
+                } else {
+                    return Err(RizeError {
+                        type_: RizeErrorType::RegisterRead(format!(
+                            "Cannot get a register named \"{}\"",
+                            reg1_name
+                        )),
+                    });
+                }
+            } else {
+                Err(RizeError {
+                        type_: RizeErrorType::Execute("Destination (arg1) must be a Register when arg3 is omitted."
+                            .to_string())
+                    })
+            }
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Decode(format!(
+                "Third argument (destination) must be a Register or omitted"
+            )),
+            })
+        }
+    }
+}
 
-// /// ### Parsing Rules
-// ///
-// /// Rules apply in Order, returning the first match.
-// ///
-// /// 0) if starts with '#'       -> Comment (Ignore)
-// /// 1) if only characters       -> Register
-// /// 2) if starts with '0x'      -> MemAddr
-// /// 3) if is entirely digits    -> Immediate
-// /// 4) if starts with '.'       -> Symbol
-// fn parse_arg(arg: &str) -> ArgType {
-//     if arg.is_empty() {
-//         return ArgType::None;
-//     }
+pub fn mov(
+    arg1: &ProgramArg, // Destination (Register or MemAddr)
+    arg2: &ProgramArg, // Source (Register, Immediate, MemAddr)
+    registers: &mut Registers,
+    memory: &mut SystemMemory, // Needs mutable memory for MemAddr dest
+) -> Result<(), RizeError> {
+    // If Execute stage run this function, it means that there's no None value
+    let source_value = arg2.value.clone().unwrap();
 
-//     // Rule 0: Comments
-//     if arg.starts_with('#') {
-//         return ArgType::None;
-//     }
+    match &arg1.arg_type {
+        ArgType::Register(dest_reg_name) => {
+            if let Some(register) = registers.get(&dest_reg_name) {
+                register.write(source_value)
+            } else {
+                return Err(RizeError {
+                    type_: RizeErrorType::RegisterRead(format!(
+                        "Cannot get a register named \"{}\"",
+                        dest_reg_name
+                    )),
+                });
+            }
+        }
+        ArgType::MemAddr(dest_addr) => {
+            if let Some(byte) = memory.bytes.get(&(*dest_addr as usize)) {
+                byte.write(source_value)?;
+                Ok(())
+            } else {
+                Err(RizeError {
+                    type_: RizeErrorType::MemoryRead(format!(
+                        "No byte found at address {}",
+                        dest_addr
+                    )),
+                })
+            }
+        }
+        _ => Err(RizeError {
+            type_: RizeErrorType::Execute(
+                "MOV destination (arg1) must be Register or MemAddr."
+                    .to_string(),
+            ),
+        }),
+    }
+}
 
-//     // Rule 1: Register
-//     if arg.chars().all(|c| c.is_alphabetic()) {
-//         return ArgType::Register(arg.to_string());
-//     }
+pub fn add(
+    arg1: &ProgramArg,
+    arg2: &ProgramArg,
+    arg3_opt: &ProgramArg,
+    registers: &mut Registers,
+) -> Result<(), RizeError> {
+    // Validate arg1 is a register and get its value
+    let v1 = arg1.value.clone().unwrap();
+    let v2 = arg2.value.clone().unwrap();
 
-//     // Rule 2: Memory Address (Hexadecimal)
-//     if let Some(hex_val) = arg.strip_prefix("0x") {
-//         if let Ok(addr) = u16::from_str_radix(hex_val, 16) {
-//             return ArgType::MemAddr(addr);
-//         }
-//         return ArgType::Error;
-//     }
+    // Ensure arg1 is a register (destination or source)
+    if !matches!(arg1.arg_type, ArgType::Register(_)) {
+        return Err(RizeError {
+            type_: RizeErrorType::Execute(
+                "ADD requires the first argument (arg1) to be a register."
+                    .to_string(),
+            ),
+        });
+    }
 
-//     // Rule 3: Immediate (Decimal)
-//     if let Ok(imm) = arg.parse::<u16>() {
-//         return ArgType::Immediate(imm);
-//     }
+    // Perform addition using wrapping arithmetic
+    let result = &(v1.clone().add(v2.clone()));
 
-//     // Rule 4: Symbol
-//     if let Some(symbol_name) = arg.strip_prefix('.') {
-//         if !symbol_name.is_empty()
-//             && symbol_name.chars().all(char::is_alphabetic)
-//         {
-//             return ArgType::Symbol(symbol_name.to_string());
-//         }
-//         // If it starts with '.' but isn't a valid symbol format
-//         return ArgType::Error;
-//     }
+    // Determine destination register using helper
+    let (_dest_register, dest_name) = determine_destination_register_mut(
+        registers,
+        &arg1.arg_type,
+        &arg3_opt.arg_type,
+    )?;
 
-//     // Default/Error if none of the above match
-//     ArgType::Error
-// }
+    // --- Set Flags ---
+    // Zero Flag (fz): Set if result is 0
+    registers
+        .get(FLAG_ZERO)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead(format!(
+                "Flag register '{}' not found",
+                FLAG_ZERO
+            )),
+        })?
+        .write(DSB::Flag(result.clone() == DSB::from(0)))?;
+    // Negative Flag (fn): Set if MSB of result is 1
+    registers
+        .get(FLAG_NEGATIVE)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead(format!(
+                "Flag register '{}' not found",
+                FLAG_NEGATIVE
+            )),
+        })?
+        .write(DSB::Flag(result.clone() & 0x8000.into() != 0.into()))?; // Check MSB
+                                                                        // Carry Flag (fc): Set if unsigned addition resulted in carry
+    let carry = (v1.as_u128() + v2.as_u128()) > 0xFFFF;
+    registers
+        .get(FLAG_CARRY)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead(format!(
+                "Flag register '{}' not found",
+                FLAG_CARRY
+            )),
+        })?
+        .write(DSB::Flag(carry))?;
+    // Overflow Flag (fo): Set if signed addition resulted in overflow
+    let v1_sign = (v1.clone() >> 15.into()) & 1.into();
+    let v2_sign = (v2.clone() >> 15.into()) & 1.into();
+    let result_sign = (result.clone() >> 15.into()) & 1.into();
+    let overflow = (v1_sign == v2_sign) && (result_sign != v1_sign);
+    registers
+        .get(FLAG_OVERFLOW)
+        .ok_or_else(|| RizeError {
+            type_: RizeErrorType::RegisterRead(format!(
+                "Flag register '{}' not found",
+                FLAG_OVERFLOW
+            )),
+        })?
+        .write(DSB::Flag(overflow))?;
+    // --- End Set Flags ---
 
-// fn mov(
-//     arg1: &ArgType, // Destination (Register or MemAddr)
-//     arg2: &ArgType, // Source (Register, Immediate, MemAddr)
-//     registers: &mut Registers,
-//     memory: &mut Memory, // Needs mutable memory for MemAddr dest
-// ) -> Result<(), RizeError> {
-//     let source_value = get_operand_value(registers, memory, arg2)?;
-
-//     match arg1 {
-//         ArgType::Register(dest_reg_name) => {
-//             let register = get_register_mut(registers, dest_reg_name)?;
-//             // Use the new trait method
-//             register.write_section_u16(source_value)
-//         }
-//         ArgType::MemAddr(dest_addr) => {
-//             memory.write(*dest_addr, source_value) // write returns Result
-//         }
-//         _ => Err(RizeError {
-//             type_: RizeErrorType::Execute,
-//             message: "MOV destination (arg1) must be Register or MemAddr."
-//                 .to_string(),
-//         }),
-//     }
-// }
-
-// fn add(
-//     arg1: &ArgType,
-//     arg2: &ArgType,
-//     arg3_opt: &Option<ArgType>,
-//     registers: &mut Registers,
-// ) -> Result<(), RizeError> {
-//     // Validate arg1 is a register and get its value
-//     let v1 = get_operand_value(registers, &Memory::new(), arg1)?;
-//     let v2 = get_operand_value(registers, &Memory::new(), arg2)?;
-
-//     // Ensure arg1 is a register (destination or source)
-//     if !matches!(arg1, ArgType::Register(_)) {
-//         return Err(RizeError {
-//             type_: RizeErrorType::Execute,
-//             message: "ADD requires the first argument (arg1) to be a register."
-//                 .to_string(),
-//         });
-//     }
-
-//     // Perform addition using wrapping arithmetic
-//     let result = v1.wrapping_add(v2);
-
-//     // Determine destination register using helper
-//     let (_dest_register, dest_name) =
-//         determine_destination_register_mut(registers, arg1, arg3_opt)?;
-
-//     // --- Set Flags ---
-//     // Zero Flag (fz): Set if result is 0
-//     registers
-//         .get(FLAG_ZERO)
-//         .ok_or_else(|| RizeError {
-//             type_: RizeErrorType::RegisterRead,
-//             message: format!("Flag register '{}' not found", FLAG_ZERO),
-//         })?
-//         .write_bool(result == 0)?;
-//     // Negative Flag (fn): Set if MSB of result is 1
-//     registers
-//         .get(FLAG_NEGATIVE)
-//         .ok_or_else(|| RizeError {
-//             type_: RizeErrorType::RegisterRead,
-//             message: format!("Flag register '{}' not found", FLAG_NEGATIVE),
-//         })?
-//         .write_bool(result & 0x8000 != 0)?; // Check MSB
-//                                             // Carry Flag (fc): Set if unsigned addition resulted in carry
-//     let carry = (v1 as u32 + v2 as u32) > 0xFFFF;
-//     registers
-//         .get(FLAG_CARRY)
-//         .ok_or_else(|| RizeError {
-//             type_: RizeErrorType::RegisterRead,
-//             message: format!("Flag register '{}' not found", FLAG_CARRY),
-//         })?
-//         .write_bool(carry)?;
-//     // Overflow Flag (fo): Set if signed addition resulted in overflow
-//     let v1_sign = (v1 >> 15) & 1;
-//     let v2_sign = (v2 >> 15) & 1;
-//     let result_sign = (result >> 15) & 1;
-//     let overflow = (v1_sign == v2_sign) && (result_sign != v1_sign);
-//     registers
-//         .get(FLAG_OVERFLOW)
-//         .ok_or_else(|| RizeError {
-//             type_: RizeErrorType::RegisterRead,
-//             message: format!("Flag register '{}' not found", FLAG_OVERFLOW),
-//         })?
-//         .write_bool(overflow)?;
-//     // --- End Set Flags ---
-
-//     // Get register ref again (determine_... returns name now)
-//     let dest_register = get_register_mut(registers, &dest_name)?;
-//     // Use section-aware trait method
-//     dest_register.write_section_u16(result)
-// }
+    // Get register ref again (determine_... returns name now)
+    if let Some(register) = registers.get(&dest_name) {
+        register.write(result.clone())
+    } else {
+        Err(RizeError {
+            type_: RizeErrorType::RegisterRead(format!(
+                "Cannot get a register named \"{}\"",
+                dest_name
+            )),
+        })
+    }
+}
 
 // fn sub(
 //     arg1: &ArgType,
