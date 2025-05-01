@@ -3,7 +3,11 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use bevy::prelude::*;
 use collection::init_interpreters;
 
-use crate::types::{ActiveProgram, Registers};
+use crate::{
+    display::DisplayMemory,
+    types::{ActiveProgram, Registers, RizeError, SystemMemory},
+    CpuCycleStage,
+};
 
 mod collection;
 mod systems;
@@ -38,12 +42,12 @@ impl Plugin for RizeOneInterpreterPlugin {
         //     app.add_systems(OnEnter(CpuCycleStage::Execute), execute);
 
         //     // add systems as Update, for auto-stepping
-        //     app.add_systems(
-        //         Update,
-        //         // (fetch, decode, execute)
-        //         // .chain()
-        //         (auto_step).run_if(in_state(CpuCycleStage::AutoStep)),
-        //     );
+        //    app.add_systems(
+        //        Update,
+        //        (fetch, decode, execute)
+        //        .chain()
+        //        (auto_step).run_if(in_state(CpuCycleStage::AutoStep)),
+        //    );
 
         // ------------------------------------ //
         // Insert All Interpreters as Resources //
@@ -65,11 +69,20 @@ pub struct InterpreterRes {
 pub trait Interpreter: Debug + Send + Sync + 'static {
     fn setup_registers(&self, registers: &mut Registers);
     fn load_program(&self, program: &mut ActiveProgram);
-    fn fetch(
+    fn fetch(&self, registers: &mut Registers, program: &mut ActiveProgram) -> Option<()>;
+    fn decode(
         &self,
-        registers: &mut Registers,
         program: &mut ActiveProgram,
+        registers: &mut Registers,
+        memory: &mut SystemMemory,
+    ) -> Result<(), RizeError>;
+    fn execute(
+        &self,
+        program: &mut ActiveProgram,
+        registers: &mut Registers,
+        memory: &mut SystemMemory,
+        display_memory: &mut DisplayMemory,
+        images: &Assets<Image>,
+        next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
     ) -> Option<()>;
-    fn decode(&self);
-    fn execute(&self);
 }

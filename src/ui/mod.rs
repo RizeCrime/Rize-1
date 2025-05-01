@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 use bevy_simple_text_input::TextInputSystem;
 use systems::{
-    available_programs, setup_available_programs, setup_control_panel,
-    setup_display, setup_instruction_ui, setup_ui_registers, setup_ui_root,
-    update_control_panel, update_display, update_instruction_ui,
-    update_register_parsed, update_registers,
+    available_programs, setup_available_programs, setup_control_panel, setup_display,
+    setup_instruction_ui, setup_ui_registers, setup_ui_root, update_control_panel, update_display,
+    update_instruction_ui, update_register_parsed, update_registers,
 };
 use types::UiBit;
 
@@ -72,10 +71,7 @@ impl PixelDisplay {
     ) -> Result<(), RizeError> {
         if x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT {
             return Err(RizeError {
-                type_: RizeErrorType::Display(format!(
-                    "Coordinates ({}, {}) out of bounds",
-                    x, y
-                )),
+                type_: RizeErrorType::Display(format!("Coordinates ({}, {}) out of bounds", x, y)),
             });
         }
 

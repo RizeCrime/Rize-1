@@ -63,15 +63,25 @@ pub struct ProgramSettings {
 }
 #[derive(Debug, Default, Resource)]
 pub struct ActiveProgram {
+    /// Contents of the entire program
     pub contents: String,
+    /// Symbols are stored in a HashMap, where:
+    /// - String: the symbol name
+    /// - usize: the line number in the program where the symbol is defined
     pub symbols: HashMap<String, usize>,
+    /// Last fetched program line
     pub line: String,
     pub opcode: OpCode,
-    pub arg1: ArgType,
-    pub arg2: ArgType,
-    pub arg3: ArgType,
+    pub arg1: ProgramArg,
+    pub arg2: ProgramArg,
+    pub arg3: ProgramArg,
 }
-
+#[derive(Debug, Clone, Default)]
+pub struct ProgramArg {
+    // Note that the ProgramArg struct is no the same as in `master` branch
+    pub value: Option<DSB>,
+    pub arg_type: ArgType,
+}
 #[derive(Debug, PartialEq, Eq)]
 pub enum RizeErrorType {
     Fetch(String),
@@ -134,7 +144,7 @@ pub enum ArgType {
 
 #[derive(Resource)]
 #[allow(dead_code)]
-pub struct FileCheckTimer(Timer);
+pub struct FileCheckTimer(pub Timer);
 
 #[derive(Debug, Default, Resource)]
 pub struct AzmPrograms(pub Vec<(PathBuf, String)>);
