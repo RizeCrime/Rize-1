@@ -789,9 +789,9 @@ pub fn update_instruction_ui(
     mut q_ui: Query<(&mut Text, &Name), With<UiElement>>,
 ) {
     let opcode: String = r_active_program.opcode.as_string();
-    let arg1: String = r_active_program.arg1.as_string();
-    let arg2: String = r_active_program.arg2.as_string();
-    let arg3: String = r_active_program.arg3.as_string();
+    let arg1: String = r_active_program.arg1.arg_type.as_string();
+    let arg2: String = r_active_program.arg2.arg_type.as_string();
+    let arg3: String = r_active_program.arg3.arg_type.as_string();
 
     let instruction_parts = [
         ("OPCODE", opcode),

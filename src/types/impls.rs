@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::ArgType;
+use super::{ArgType, ProgramArg};
 
 // --- //
 // DSB //

@@ -72,11 +72,16 @@ pub struct ActiveProgram {
     /// Last fetched program line
     pub line: String,
     pub opcode: OpCode,
-    pub arg1: ArgType,
-    pub arg2: ArgType,
-    pub arg3: ArgType,
+    pub arg1: ProgramArg,
+    pub arg2: ProgramArg,
+    pub arg3: ProgramArg,
 }
-
+#[derive(Debug, Clone, Default)]
+pub struct ProgramArg {
+    // Note that the ProgramArg struct is no the same as in `master` branch
+    pub value: Option<DSB>,
+    pub arg_type: ArgType,
+}
 #[derive(Debug, PartialEq, Eq)]
 pub enum RizeErrorType {
     Fetch(String),

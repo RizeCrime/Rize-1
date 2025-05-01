@@ -9,11 +9,13 @@ use crate::{
         N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER,
     },
     types::{
-        ActiveProgram, ArgType, OpCode, Register, Registers, SystemMemory,
+        ActiveProgram, ArgType, OpCode, Register, Registers, RizeError, SystemMemory
     },
     CpuCycleStage,
     DisplayMemory,
 };
+
+use super::opcode_fn::get_operand_value;
 
 use super::super::Interpreter;
 
@@ -96,7 +98,7 @@ impl Interpreter for AzmInterpreter {
 
         Some(())
     }
-    fn decode(&self, program: &mut ActiveProgram) {
+    fn decode(&self, program: &mut ActiveProgram, registers: &mut Registers, memory: &mut SystemMemory) -> Result<(), RizeError> {
         let parts: Vec<&str> = program.line.split_whitespace().collect();
         let raw_opcode = parts.get(0).copied().unwrap_or_default().to_string();
         let raw_arg1 = parts.get(1).copied().unwrap_or_default().to_string();
@@ -129,9 +131,15 @@ impl Interpreter for AzmInterpreter {
             program.opcode = opcode;
         }
 
-        program.arg1 = ArgType::from_string(raw_arg1);
-        program.arg2 = ArgType::from_string(raw_arg2);
-        program.arg3 = ArgType::from_string(raw_arg3);
+        program.arg1.arg_type = ArgType::from_string(raw_arg1);
+        program.arg2.arg_type = ArgType::from_string(raw_arg2);
+        program.arg3.arg_type = ArgType::from_string(raw_arg3);
+
+        // Validate arguments (and save their values)
+        program.arg1.value = Some(get_operand_value(registers, memory, &program.arg1.arg_type)?);
+        program.arg2.value = Some(get_operand_value(registers, memory, &program.arg2.arg_type)?);
+        program.arg3.value = Some(get_operand_value(registers, memory, &program.arg3.arg_type)?);
+        Ok(())
     }
     fn execute(
         &self,

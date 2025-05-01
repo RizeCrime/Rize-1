@@ -1,12 +1,12 @@
-use crate::types::{ArgType, ByteOperations, Register, Registers, RizeError, RizeErrorType, SystemMemory, DSB};
+use crate::types::{ArgType, ByteOperations, Registers, RizeError, RizeErrorType, SystemMemory, DSB};
 
 /// Determines the value of an operand (Register, Immediate, or Memory Address).
-pub(super) fn get_operand_value(
+pub fn get_operand_value(
     registers: &mut Registers,
     memory: &SystemMemory,
     arg: &ArgType,
 ) -> Result<DSB, RizeError> {
-    match arg {
+    match &arg {
         ArgType::Register(reg_name) => {
             // Unwrap, because no RizeErrorType expect RegisterGet error
             if let Some(register) = registers.get(&reg_name) {
@@ -26,13 +26,13 @@ pub(super) fn get_operand_value(
             }
         }
         ArgType::Symbol(sym) => return Err(RizeError {
-            type_: RizeErrorType::Execute(format!(
+            type_: RizeErrorType::Decode(format!(
                 "Cannot use symbol '.{}' as an operand value.",
                 sym
             ))
         }),
         ArgType::None | ArgType::Error => return Err(RizeError {
-            type_: RizeErrorType::Execute("Invalid/None ArgType encountered where value operand expected.".to_string()),
+            type_: RizeErrorType::Decode("Invalid/None ArgType encountered where value operand expected.".to_string()),
         }),
     }
 }
