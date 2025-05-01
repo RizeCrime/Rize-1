@@ -1,9 +1,8 @@
-use std::{os::raw, str::FromStr};
+use std::str::FromStr;
 
 #[allow(unused_imports)]
 use bevy::prelude::*;
 
-use crate::DisplayMemory;
 use crate::{
     constants::{
         FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO,
@@ -13,6 +12,7 @@ use crate::{
         ActiveProgram, ArgType, OpCode, Register, Registers, SystemMemory,
     },
     CpuCycleStage,
+    DisplayMemory,
 };
 
 use super::super::Interpreter;
