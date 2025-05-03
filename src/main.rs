@@ -24,7 +24,7 @@ use display::DisplayMemory;
 use systems::{check_programs, setup_camera};
 use types::{
     ActiveProgram, AzmPrograms, Byte, FileCheckTimer, ProgramSettings,
-    Register, Registers,
+    Registers,
 };
 
 mod constants;

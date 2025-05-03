@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use bevy::prelude::*;
-use bevy::ui::State;
 
 use std::str::FromStr;
 
@@ -204,15 +203,15 @@ impl Interpreter for AzmInterpreter {
             OpCode::ADD => add(arg1, arg2, registers),
             OpCode::SUB => sub(arg1, arg2, registers),
             OpCode::MUL => mul(arg1, arg2, registers),
-            OpCode::DIV => div(arg1, arg2, arg3, registers),
+            OpCode::DIV => div(arg1, arg2, registers),
             OpCode::ST => st(arg1, arg2, &memory),
             OpCode::LD => ld(arg1, arg2, registers, &memory),
-            OpCode::AND => and(arg1, arg2, arg3, registers),
-            OpCode::OR => or(arg1, arg2, arg3, registers),
-            OpCode::XOR => xor(arg1, arg2, arg3, registers),
-            OpCode::NOT => not(arg1, arg2, registers),
-            OpCode::SHL => shl(arg1, arg2, arg3, registers),
-            OpCode::SHR => shr(arg1, arg2, arg3, registers),
+            OpCode::AND => and(arg1, arg2, registers),
+            OpCode::OR => or(arg1, arg2, registers),
+            OpCode::XOR => xor(arg1, arg2, registers),
+            OpCode::NOT => not(arg1, registers),
+            OpCode::SHL => shl(arg1, arg2, registers),
+            OpCode::SHR => shr(arg1, arg2, registers),
             OpCode::WDM => wdm(arg1, arg2, arg3, display_memory),
             OpCode::JMP => jmp(arg1, registers, symbols),
             OpCode::JIZ => jiz(arg1, registers, symbols),
