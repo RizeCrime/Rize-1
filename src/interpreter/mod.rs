@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use bevy::prelude::*;
 use collection::init_interpreters;
 
-use crate::types::{ActiveProgram, Registers};
+use crate::{
+    display::DisplayMemory,
+    types::{ActiveProgram, Registers, RizeError, SystemMemory},
+};
 
 mod collection;
 mod systems;
@@ -70,6 +73,18 @@ pub trait Interpreter: Debug + Send + Sync + 'static {
         registers: &mut Registers,
         program: &mut ActiveProgram,
     ) -> Option<()>;
-    fn decode(&self);
-    fn execute(&self);
+    fn decode(
+        &self,
+        program: &mut ActiveProgram,
+        registers: &mut Registers,
+        memory: &mut SystemMemory,
+    ) -> Result<(), RizeError>;
+    fn execute(
+        &self,
+        program: &mut ActiveProgram,
+        registers: &mut Registers,
+        memory: &mut SystemMemory,
+        display_memory: &mut DisplayMemory,
+        images: &Assets<Image>,
+    ) -> Option<()>;
 }

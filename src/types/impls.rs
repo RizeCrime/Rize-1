@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, BitAnd, Div, Mul, Shl, Shr, Sub},
     sync::{Arc, Mutex},
 };
 
@@ -123,6 +123,45 @@ impl Div<DSB> for DSB {
         let b = other.as_u128();
 
         let result = a / b;
+
+        result.into()
+    }
+}
+
+impl BitAnd<DSB> for DSB {
+    type Output = DSB;
+
+    fn bitand(self, other: Self) -> Self::Output {
+        let a = self.as_u128();
+        let b = other.as_u128();
+
+        let result = a & b;
+
+        result.into()
+    }
+}
+
+impl Shr<DSB> for DSB {
+    type Output = DSB;
+
+    fn shr(self, other: DSB) -> Self::Output {
+        let a = self.as_u128();
+        let b = other.as_u128();
+
+        let result = a >> b;
+
+        result.into()
+    }
+}
+
+impl Shl<DSB> for DSB {
+    type Output = DSB;
+
+    fn shl(self, other: DSB) -> Self::Output {
+        let a = self.as_u128();
+        let b = other.as_u128();
+
+        let result = a << b;
 
         result.into()
     }
@@ -432,5 +471,55 @@ impl ArgType {
             ArgType::MemAddr(m) => m.to_string(),
             ArgType::Symbol(s) => s.clone(),
         }
+    }
+    
+    /// ### Parsing Rules
+    ///
+    /// Rules apply in Order, returning the first match.
+    ///
+    /// 0) if starts with '#'       -> Comment (Ignore)
+    /// 1) if only characters       -> Register
+    /// 2) if starts with '0x'      -> MemAddr
+    /// 3) if is entirely digits    -> Immediate
+    /// 4) if starts with '.'       -> Symbol
+    pub fn from_string(arg: String) -> Self {
+        if arg.is_empty() {
+            return ArgType::None;
+        }
+
+        // Rule 0: Comments
+        if arg.starts_with('#') {
+            return ArgType::None;
+        }
+
+        // Rule 1: Register
+        if arg.chars().all(|c| c.is_alphabetic()) {
+            return ArgType::Register(arg.to_string());
+        }
+
+        // Rule 2: Memory Address (Hexadecimal)
+        if let Some(hex_val) = arg.strip_prefix("0x") {
+            if let Ok(addr) = u16::from_str_radix(hex_val, 16) {
+                return ArgType::MemAddr(addr);
+            }
+            return ArgType::Error;
+        }
+
+        // Rule 3: Immediate (Decimal)
+        if let Ok(imm) = arg.parse::<u16>() {
+            return ArgType::Immediate(imm);
+        }
+
+        // Rule 4: Symbol
+        if let Some(symbol_name) = arg.strip_prefix('.') {
+            if !symbol_name.is_empty() && symbol_name.chars().all(char::is_alphabetic) {
+                return ArgType::Symbol(symbol_name.to_string());
+            }
+            // If it starts with '.' but isn't a valid symbol format
+            return ArgType::Error;
+        }
+
+        // Default/Error if none of the above match
+        ArgType::Error
     }
 }

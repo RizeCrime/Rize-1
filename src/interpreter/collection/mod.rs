@@ -3,6 +3,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 mod azm;
+mod opcode_fn;
 pub use azm::*;
 
 use super::InterpreterRes;
