@@ -709,7 +709,7 @@ pub fn available_programs(
                     std::io::read_to_string(&program_contents).unwrap();
 
                 // Reset Program Counter
-                r_registers.get(PROGRAM_COUNTER).unwrap().write(0).unwrap();
+                r_registers.get(PROGRAM_COUNTER).expect("Program Counter must exist!").write(0).unwrap();
             }
         }
     });

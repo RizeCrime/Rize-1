@@ -3,25 +3,66 @@
 use bevy::prelude::*;
 
 use crate::{
-    types::{ActiveProgram, Registers, SystemMemory}, 
-    CpuCycleStage,
     display::DisplayMemory,
+    types::{ActiveProgram, ProgramSettings, Registers, SystemMemory},
+    CpuCycleStage,
 };
 
 use super::InterpreterRes;
 
+pub fn auto_step(
+    mut program: ResMut<ActiveProgram>,
+    settings: Res<ProgramSettings>,
+    mut registers: ResMut<Registers>,
+    mut memory: ResMut<SystemMemory>,
+    mut display_memory: ResMut<DisplayMemory>,
+    mut sn_cpu: ResMut<NextState<CpuCycleStage>>,
+    interpreters: Res<InterpreterRes>,
+) {
+    for _ in 0..settings.autostep_lines {
+        unsafe {
+            fetch(
+                std::mem::transmute_copy(&program),
+                std::mem::transmute_copy(&registers),
+                std::mem::transmute_copy(&sn_cpu),
+                std::mem::transmute_copy(&interpreters),
+            );
+            decode(
+                std::mem::transmute_copy(&memory),
+                std::mem::transmute_copy(&registers),
+                std::mem::transmute_copy(&program),
+                std::mem::transmute_copy(&sn_cpu),
+                std::mem::transmute_copy(&interpreters),
+            );
+            execute(
+                std::mem::transmute_copy(&interpreters),
+                std::mem::transmute_copy(&registers),
+                std::mem::transmute_copy(&program),
+                std::mem::transmute_copy(&memory),
+                std::mem::transmute_copy(&display_memory),
+                std::mem::transmute_copy(&sn_cpu),
+            );
+        }
+    }
+}
+
+pub fn setup(
+    mut registers: ResMut<Registers>,
+    interpreters: Res<InterpreterRes>,
+) {
+    let interpreter = interpreters.active.as_ref().unwrap();
+    interpreter.setup_registers(&mut registers);
+}
+
 pub fn fetch(
-    mut r_active_program: ResMut<ActiveProgram>,
+    mut program: ResMut<ActiveProgram>,
     mut registers: ResMut<Registers>,
     mut sn_cpu: ResMut<NextState<CpuCycleStage>>,
     interpreters: Res<InterpreterRes>,
 ) {
     let interpreter = interpreters.active.as_ref().unwrap();
-    if interpreter
-        .fetch(&mut registers, &mut r_active_program)
-        .is_none()
-    {
-        // Fetching errors won't let Decoding stage reading the actual line to 
+    if interpreter.fetch(&mut registers, &mut program).is_none() {
+        // Fetching errors won't let Decoding stage reading the actual line to
         //   decode (which results in ghosting CpuCycle)
         sn_cpu.set(CpuCycleStage::Halt);
     }
@@ -35,7 +76,9 @@ pub fn decode(
     interpreters: Res<InterpreterRes>,
 ) {
     let interpreter = interpreters.active.as_ref().unwrap();
-    if let Err(e) = interpreter.decode(&mut program, &mut registers, &mut memory) {
+    if let Err(e) =
+        interpreter.decode(&mut program, &mut registers, &mut memory)
+    {
         error!("Decoding Error: {:?}", e.type_,);
         // Decoding errors will compromise the Execute stage.
         //   For example, by not validating the arguments,
@@ -50,23 +93,16 @@ pub fn execute(
     mut program: ResMut<ActiveProgram>,
     mut memory: ResMut<SystemMemory>,
     mut display_memory: ResMut<DisplayMemory>,
-    images: Res<Assets<Image>>,
     mut sn_cpu: ResMut<NextState<CpuCycleStage>>,
-    mut next_cpu_stage: ResMut<NextState<CpuCycleStage>>,
 ) {
     let interpreter = interpreters.active.as_ref().unwrap();
-    if interpreter
-        .execute(
-            &mut program,
-            &mut registers,
-            &mut memory,
-            &mut display_memory,
-            &images,
-        )
-        .is_none()
-    {
-        // Halting prevents from ignoring instructions, that are incorrect/causing unexpected behavior
-        // Clearly indicating that an error has occured is considerably better than unexpected behavior.
-        sn_cpu.set(CpuCycleStage::Halt);
-    }
+    // The Execute Stage needs Access to sn_cpu anyway,
+    // so it'll have to Halt itself
+    let _ = interpreter.execute(
+        &mut program,
+        &mut registers,
+        &mut memory,
+        &mut display_memory,
+        sn_cpu,
+    );
 }

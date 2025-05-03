@@ -47,7 +47,6 @@ impl Plugin for RizeOneUi {
             (
                 update_registers,
                 update_register_parsed,
-                // update_control_panel,
                 available_programs,
                 update_instruction_ui,
                 update_display,

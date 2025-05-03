@@ -2,10 +2,12 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use bevy::prelude::*;
 use collection::init_interpreters;
+use systems::auto_step;
 
 use crate::{
     display::DisplayMemory,
     types::{ActiveProgram, Registers, RizeError, SystemMemory},
+    CpuCycleStage,
 };
 
 mod collection;
@@ -15,45 +17,19 @@ pub struct RizeOneInterpreterPlugin;
 
 impl Plugin for RizeOneInterpreterPlugin {
     fn build(&self, app: &mut App) {
-        //     app.insert_resource(AzmPrograms::default());
-        //     app.insert_resource(ActiveProgram {
-        //         ..Default::default()
-        //     });
-        //     app.insert_resource(ProgramSettings::default());
-        //     app.insert_resource(FileCheckTimer(Timer::from_seconds(
-        //         0.25,
-        //         TimerMode::Repeating,
-        //     )));
-
-        //     app.register_type::<AzmPrograms>();
-        //     app.register_type::<ActiveProgram>();
-
-        //     #[cfg(debug_assertions)]
-        //     app.add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default());
-
-        //     app.add_plugins(RizeOneDisplay);
-
-        //     app.add_systems(Update, check_azm_programs);
-
-        //     // add systems OnEnter, for manual step-through
-        //     app.add_systems(OnEnter(CpuCycleStage::Fetch), fetch);
-        //     app.add_systems(OnEnter(CpuCycleStage::Decode), decode);
-        //     app.add_systems(OnEnter(CpuCycleStage::Execute), execute);
-
-        //     // add systems as Update, for auto-stepping
-        //     app.add_systems(
-        //         Update,
-        //         // (fetch, decode, execute)
-        //         // .chain()
-        //         (auto_step).run_if(in_state(CpuCycleStage::AutoStep)),
-        //     );
-
         // ------------------------------------ //
         // Insert All Interpreters as Resources //
         // ------------------------------------ //
         app.insert_resource::<InterpreterRes>(InterpreterRes::default());
 
-        app.add_systems(Startup, init_interpreters);
+        app.add_systems(Startup, init_interpreters)
+            .add_systems(OnEnter(CpuCycleStage::Fetch), systems::fetch)
+            .add_systems(OnEnter(CpuCycleStage::Decode), systems::decode)
+            .add_systems(OnEnter(CpuCycleStage::Execute), systems::execute)
+            .add_systems(
+                Update,
+                auto_step.run_if(in_state(CpuCycleStage::AutoStep)),
+            );
     }
 }
 
@@ -85,6 +61,7 @@ pub trait Interpreter: Debug + Send + Sync + 'static {
         registers: &mut Registers,
         memory: &mut SystemMemory,
         display_memory: &mut DisplayMemory,
-        images: &Assets<Image>,
+        sn_cpu: ResMut<NextState<CpuCycleStage>>,
     ) -> Option<()>;
+    fn file_type(&self) -> String;
 }

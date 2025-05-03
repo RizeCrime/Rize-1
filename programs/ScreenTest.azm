@@ -26,7 +26,6 @@ WDM GAA GAA GCA # Write to Display Memory
 ADD GCA 1       # Increment Y Coordinate
 
 SUB GCB 32 GDA  # Set Zero Flag if GCA == 32
-MOV GDA FZ
 JIZ .yMax       # Jump to Reset Y if True
 
 JMP .colorLoop
@@ -39,7 +38,6 @@ SHR GCA 8       # GCA now Holds X where Y usually is
 ADD GCA 1       # Increment X Coordinate
 
 SUB GCA 32 GDA  # Set Zero Flag if X == 32
-MOV GDA FZ
 JIZ .reset      # Start Over!
 
 SHL GCA 8       # Put X Back in the Upper Byte 

@@ -1,3 +1,5 @@
+use std::fs;
+
 use bevy::prelude::*;
 
 use crate::{
@@ -5,7 +7,8 @@ use crate::{
         FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO,
         N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER,
     },
-    types::{Register, Registers},
+    interpreter::InterpreterRes,
+    types::{AzmPrograms, FileCheckTimer, Register, Registers},
 };
 
 pub fn setup_camera(mut commands: Commands) {
@@ -50,4 +53,74 @@ pub fn setup_registers(mut r_registers: ResMut<Registers>) {
     }
 
     info!("Finished setting up General Purpose Registers.");
+}
+
+pub fn check_programs(
+    mut r_programs: ResMut<AzmPrograms>,
+    time: Res<Time>,
+    mut timer: ResMut<FileCheckTimer>,
+    r_interpreters: Res<InterpreterRes>,
+) {
+    if !timer.0.tick(time.delta()).just_finished() {
+        return;
+    }
+
+    let interpreter = if let Some(interpreter) = r_interpreters.active.as_ref()
+    {
+        interpreter
+    } else {
+        return;
+    };
+
+    let program_dir = "programs/";
+    let file_extension = interpreter.file_type();
+
+    let entries = match fs::read_dir(program_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            error!("Error reading directory: {}", e);
+            return;
+        }
+    };
+
+    entries.for_each(|entry| {
+        if entry.is_err() {
+            return;
+        }
+        let entry = entry.unwrap();
+
+        if !entry.path().is_file() {
+            return;
+        }
+
+        if r_programs.0.iter().any(|x| x.0 == entry.path()) {
+            return;
+        }
+
+        if entry.path().extension().is_none() {
+            return;
+        }
+
+        let extension = entry
+            .path()
+            .extension()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        if extension != file_extension {
+            return;
+        }
+
+        r_programs.0.push((
+            entry.path().clone(),
+            entry
+                .path()
+                .clone()
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+        ));
+    });
 }

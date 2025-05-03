@@ -1,6 +1,8 @@
+use bevy::prelude::*;
+
 use std::{
     collections::HashMap,
-    ops::{Add, BitAnd, Div, Mul, Shl, Shr, Sub},
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Not, Shl, Shr, Sub},
     sync::{Arc, Mutex},
 };
 
@@ -12,13 +14,29 @@ use crate::{
     },
 };
 
-use super::ArgType;
+use super::{ArgType, ProgramSettings};
 
 // --- //
 // DSB //
 // --- //
 impl DSB {
     pub fn _test() {}
+
+    /// Helper function to create a DSB from a usize result, matching the size of the original DSB.
+    fn from_usize_matching_size(result: usize, original: &DSB) -> DSB {
+        match original.get_bits() {
+            1 => DSB::Flag(result != 0),
+            8 => DSB::U8(result as u8),
+            16 => DSB::U16(result as u16),
+            32 => DSB::U32(result as u32),
+            64 => DSB::U64(result as u64),
+            128 => DSB::U128(result as u128),
+            _ => unreachable!(
+                "Invalid bit size encountered: {}",
+                original.get_bits()
+            ),
+        }
+    }
 }
 impl Default for DSB {
     fn default() -> Self {
@@ -62,6 +80,11 @@ impl From<u128> for DSB {
         DSB::U128(value)
     }
 }
+impl From<usize> for DSB {
+    fn from(value: usize) -> Self {
+        DSB::USIZE(value)
+    }
+}
 impl From<Bits> for DSB {
     fn from(value: Bits) -> Self {
         let decimal = value.as_decimal();
@@ -80,12 +103,10 @@ impl Add<DSB> for DSB {
     type Output = DSB;
 
     fn add(self, other: DSB) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
-
-        let result = a + b;
-
-        result.into()
+        let a = self.as_usize();
+        let b = other.as_usize();
+        let result = a.wrapping_add(b);
+        DSB::from_usize_matching_size(result, &self)
     }
 }
 
@@ -93,12 +114,10 @@ impl Sub<DSB> for DSB {
     type Output = DSB;
 
     fn sub(self, other: DSB) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
-
-        let result = a - b;
-
-        result.into()
+        let a = self.as_usize();
+        let b = other.as_usize();
+        let result = a.wrapping_sub(b);
+        DSB::from_usize_matching_size(result, &self)
     }
 }
 
@@ -106,12 +125,10 @@ impl Mul<DSB> for DSB {
     type Output = DSB;
 
     fn mul(self, other: DSB) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
-
-        let result = a * b;
-
-        result.into()
+        let a = self.as_usize();
+        let b = other.as_usize();
+        let result = a.wrapping_mul(b);
+        DSB::from_usize_matching_size(result, &self)
     }
 }
 
@@ -119,12 +136,16 @@ impl Div<DSB> for DSB {
     type Output = DSB;
 
     fn div(self, other: DSB) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
+        let a = self.as_usize();
+        let b = other.as_usize();
 
-        let result = a / b;
+        if b == 0 {
+            // Division by zero returns 0, matching the size of the dividend.
+            return DSB::from_usize_matching_size(0, &self);
+        }
 
-        result.into()
+        let result = a.wrapping_div(b);
+        DSB::from_usize_matching_size(result, &self)
     }
 }
 
@@ -132,12 +153,10 @@ impl BitAnd<DSB> for DSB {
     type Output = DSB;
 
     fn bitand(self, other: Self) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
-
+        let a = self.as_usize();
+        let b = other.as_usize();
         let result = a & b;
-
-        result.into()
+        DSB::from_usize_matching_size(result, &self)
     }
 }
 
@@ -145,12 +164,15 @@ impl Shr<DSB> for DSB {
     type Output = DSB;
 
     fn shr(self, other: DSB) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
-
-        let result = a >> b;
-
-        result.into()
+        let a = self.as_usize();
+        // Ensure shift amount is within valid range for usize::shr
+        // Rust's shr panics if shift amount >= bits in type.
+        // While wrapping_shr exists, usize::shr directly might be slightly more performant
+        // if we cap the shift amount appropriately. Let's use wrapping_shr for simplicity
+        // and consistency with other ops, though clamping `b` might be another option.
+        let b = other.as_usize() as u32; // Cast to u32 for wrapping_shr/shl
+        let result = a.wrapping_shr(b);
+        DSB::from_usize_matching_size(result, &self)
     }
 }
 
@@ -158,16 +180,78 @@ impl Shl<DSB> for DSB {
     type Output = DSB;
 
     fn shl(self, other: DSB) -> Self::Output {
-        let a = self.as_u128();
-        let b = other.as_u128();
+        let a = self.as_usize();
+        let b = other.as_usize() as u32; // Cast to u32 for wrapping_shl
+        let result = a.wrapping_shl(b);
+        DSB::from_usize_matching_size(result, &self)
+    }
+}
 
-        let result = a << b;
+impl BitOr<DSB> for DSB {
+    type Output = DSB;
 
-        result.into()
+    fn bitor(self, other: Self) -> Self::Output {
+        let a = self.as_usize();
+        let b = other.as_usize();
+        let result = a | b;
+        DSB::from_usize_matching_size(result, &self)
+    }
+}
+
+impl BitXor<DSB> for DSB {
+    type Output = DSB;
+
+    fn bitxor(self, other: Self) -> Self::Output {
+        let a = self.as_usize();
+        let b = other.as_usize();
+        let result = a ^ b;
+        DSB::from_usize_matching_size(result, &self)
+    }
+}
+
+impl Not for DSB {
+    type Output = DSB;
+
+    fn not(self) -> Self::Output {
+        // Perform NOT based on the specific DSB variant's size
+        match self {
+            DSB::Flag(f) => DSB::Flag(!f),
+            DSB::U8(n) => DSB::U8(!n),
+            DSB::U16(n) => DSB::U16(!n),
+            DSB::U32(n) => DSB::U32(!n),
+            DSB::U64(n) => DSB::U64(!n),
+            DSB::U128(n) => DSB::U128(!n),
+            DSB::USIZE(n) => DSB::USIZE(!n),
+        }
     }
 }
 
 impl DSB {
+    pub fn get_bits(&self) -> usize {
+        match self {
+            DSB::Flag(_) => 1,
+            DSB::U8(_) => 8,
+            DSB::U16(_) => 16,
+            DSB::U32(_) => 32,
+            DSB::U64(_) => 64,
+            DSB::U128(_) => 128,
+            DSB::USIZE(_) => 64,
+        }
+    }
+
+    pub fn as_usize(&self) -> usize {
+        match self {
+            DSB::Flag(f) => *f as usize,
+            DSB::U8(n) => *n as usize,
+            DSB::U16(n) => *n as usize,
+            DSB::U32(n) => *n as usize,
+            DSB::U64(n) => *n as usize,
+            DSB::U128(n) => *n as usize,
+            DSB::USIZE(n) => *n as usize,
+        }
+    }
+
+    #[deprecated]
     pub fn as_u128(&self) -> u128 {
         match self {
             DSB::Flag(f) => *f as u128,
@@ -176,17 +260,20 @@ impl DSB {
             DSB::U32(n) => *n as u128,
             DSB::U64(n) => *n as u128,
             DSB::U128(n) => *n,
+            DSB::USIZE(n) => *n as u128,
         }
     }
 
     pub fn as_string(&self) -> String {
+        // Bits::from(self.clone()).as_decimal().to_string()
         match self {
-            DSB::Flag(f) => f.clone().to_string(),
-            DSB::U8(n) => n.clone().to_string(),
-            DSB::U16(n) => n.clone().to_string(),
-            DSB::U32(n) => n.clone().to_string(),
-            DSB::U64(n) => n.clone().to_string(),
-            DSB::U128(n) => n.clone().to_string(),
+            DSB::Flag(f) => f.to_string(),
+            DSB::U8(n) => n.to_string(),
+            DSB::U16(n) => n.to_string(),
+            DSB::U32(n) => n.to_string(),
+            DSB::U64(n) => n.to_string(),
+            DSB::U128(n) => n.to_string(),
+            &DSB::USIZE(n) => n.to_string(),
         }
     }
 
@@ -203,6 +290,8 @@ impl DSB {
                 .map_or_else(|| String::from("�"), |c| c.to_string()),
             DSB::U128(n) => std::char::from_u32(*n as u32)
                 .map_or_else(|| String::from("�"), |c| c.to_string()),
+            DSB::USIZE(n) => std::char::from_u32(*n as u32)
+                .map_or_else(|| String::from(""), |c| c.to_string()),
         }
     }
 
@@ -214,6 +303,7 @@ impl DSB {
             DSB::U32(n) => format!("{:x}", *n),
             DSB::U64(n) => format!("{:x}", *n),
             DSB::U128(n) => format!("{:x}", *n),
+            DSB::USIZE(n) => format!("{:x}", *n),
         }
     }
 }
@@ -226,8 +316,8 @@ impl Byte {
         self.dsb.lock().unwrap().as_string()
     }
 
-    pub fn as_decimal(&self) -> u128 {
-        self.dsb.lock().unwrap().as_u128()
+    pub fn as_decimal(&self) -> usize {
+        self.dsb.lock().unwrap().as_usize()
     }
 }
 
@@ -239,35 +329,120 @@ impl ByteOperations for Byte {
         let mut guard = self.dsb.lock().unwrap();
         let prev = guard.as_ref().clone();
         *guard = Arc::new(data);
-        Ok(ByteOpResult { previous: prev })
+        Ok(ByteOpResult {
+            previous: prev,
+            ..Default::default()
+        })
     }
     fn add(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current + data);
-        Ok(ByteOpResult { previous: prev })
+        Ok(ByteOpResult {
+            previous: prev,
+            ..Default::default()
+        })
     }
     fn sub(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current - data);
-        Ok(ByteOpResult { previous: prev })
+        Ok(ByteOpResult {
+            previous: prev,
+            ..Default::default()
+        })
     }
     fn mul(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current * data);
-        Ok(ByteOpResult { previous: prev })
+        Ok(ByteOpResult {
+            previous: prev,
+            ..Default::default()
+        })
     }
     fn div(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current / data);
-        Ok(ByteOpResult { previous: prev })
+        Ok(ByteOpResult {
+            previous: prev,
+            ..Default::default()
+        })
+    }
+    fn bitand(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
+        let mut guard = self.dsb.lock().unwrap();
+        let current = guard.as_ref().clone();
+        let prev = current.clone();
+        *guard = Arc::new(current & data);
+        Ok(ByteOpResult {
+            previous: prev,
+            result: guard.as_ref().clone(),
+            carry: false,
+        })
+    }
+    fn bitor(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
+        let mut guard = self.dsb.lock().unwrap();
+        let current = guard.as_ref().clone();
+        let prev = current.clone();
+        *guard = Arc::new(current | data);
+        Ok(ByteOpResult {
+            previous: prev,
+            result: guard.as_ref().clone(),
+            carry: false,
+        })
+    }
+    fn bitxor(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
+        let mut guard = self.dsb.lock().unwrap();
+        let current = guard.as_ref().clone();
+        let prev = current.clone();
+        *guard = Arc::new(current ^ data);
+        Ok(ByteOpResult {
+            previous: prev,
+            result: guard.as_ref().clone(),
+            carry: false, // XOR doesn't typically have a carry flag in this context
+        })
+    }
+    fn bitnot(&self) -> Result<ByteOpResult, RizeError> {
+        let mut guard = self.dsb.lock().unwrap();
+        let current = guard.as_ref().clone();
+        let prev = current.clone();
+        *guard = Arc::new(!current);
+        Ok(ByteOpResult {
+            previous: prev,
+            result: guard.as_ref().clone(),
+            carry: false,
+        })
+    }
+    fn bitshl(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
+        let mut guard = self.dsb.lock().unwrap();
+        let current = guard.as_ref().clone();
+        let prev = current.clone();
+        let shift_amount = data; // Assuming data holds the shift amount
+        *guard = Arc::new(current << shift_amount);
+        // TODO: Determine carry flag for shift operations
+        Ok(ByteOpResult {
+            previous: prev,
+            result: guard.as_ref().clone(),
+            carry: false, // Placeholder
+        })
+    }
+    fn bitshr(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
+        let mut guard = self.dsb.lock().unwrap();
+        let current = guard.as_ref().clone();
+        let prev = current.clone();
+        let shift_amount = data; // Assuming data holds the shift amount
+        *guard = Arc::new(current >> shift_amount);
+        // TODO: Determine carry flag for shift operations
+        Ok(ByteOpResult {
+            previous: prev,
+            result: guard.as_ref().clone(),
+            carry: false, // Placeholder
+        })
     }
 }
 
@@ -284,7 +459,7 @@ impl From<Bits> for Byte {
 // Bits //
 // ---- //
 impl Bits {
-    pub fn as_decimal(&self) -> u128 {
+    pub fn as_decimal(&self) -> usize {
         let mut decimal = 0;
         let mut power = 1;
 
@@ -391,7 +566,57 @@ impl Registers {
         &self.all
     }
     pub fn get(&mut self, name: &str) -> Option<&mut Register> {
-        self.all.get_mut(name)
+        if name.is_empty() {
+            warn!("Attempted to get register with empty name");
+            return None;
+        }
+
+        let mut filter = name.to_string().to_ascii_lowercase();
+
+        // Special handling for G registers (e.g. "G00", "G01")
+        if name.len() == 3
+            && name
+                .chars()
+                .next()
+                .map_or(false, |c| c.to_ascii_lowercase() == 'g')
+        {
+            // Remove the last digit for G registers
+            filter.pop();
+        }
+
+        // Check if register exists
+        if !self.all.contains_key(&filter) {
+            warn!(
+                "Register '{}' not found. Available registers: {:?}",
+                filter,
+                self.all.keys().collect::<Vec<_>>()
+            );
+            return None;
+        }
+
+        // Get the register
+        match self.all.get_mut(&filter) {
+            Some(register) => Some(register),
+            None => {
+                error!(
+                    "Failed to get register '{}' that was verified to exist",
+                    filter
+                );
+                None
+            }
+        }
+    }
+}
+
+// ---------------- //
+// Program Settings //
+// ---------------- //
+impl Default for ProgramSettings {
+    fn default() -> Self {
+        Self {
+            autostep: false,
+            autostep_lines: 20,
+        }
     }
 }
 
@@ -472,7 +697,7 @@ impl ArgType {
             ArgType::Symbol(s) => s.clone(),
         }
     }
-    
+
     /// ### Parsing Rules
     ///
     /// Rules apply in Order, returning the first match.
@@ -483,6 +708,8 @@ impl ArgType {
     /// 3) if is entirely digits    -> Immediate
     /// 4) if starts with '.'       -> Symbol
     pub fn from_string(arg: String) -> Self {
+        debug!("types/impls.rs/from_string: {}", arg);
+
         if arg.is_empty() {
             return ArgType::None;
         }
@@ -499,20 +726,22 @@ impl ArgType {
 
         // Rule 2: Memory Address (Hexadecimal)
         if let Some(hex_val) = arg.strip_prefix("0x") {
-            if let Ok(addr) = u16::from_str_radix(hex_val, 16) {
+            if let Ok(addr) = usize::from_str_radix(hex_val, 16) {
                 return ArgType::MemAddr(addr);
             }
             return ArgType::Error;
         }
 
         // Rule 3: Immediate (Decimal)
-        if let Ok(imm) = arg.parse::<u16>() {
+        if let Ok(imm) = arg.parse::<usize>() {
             return ArgType::Immediate(imm);
         }
 
         // Rule 4: Symbol
         if let Some(symbol_name) = arg.strip_prefix('.') {
-            if !symbol_name.is_empty() && symbol_name.chars().all(char::is_alphabetic) {
+            if !symbol_name.is_empty()
+                && symbol_name.chars().all(char::is_alphabetic)
+            {
                 return ArgType::Symbol(symbol_name.to_string());
             }
             // If it starts with '.' but isn't a valid symbol format

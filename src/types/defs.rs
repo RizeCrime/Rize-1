@@ -21,6 +21,7 @@ pub enum DSB {
     U32(u32),
     U64(u64),
     U128(u128),
+    USIZE(usize),
 }
 #[derive(Debug, Default)]
 pub struct Byte {
@@ -30,9 +31,22 @@ pub struct Byte {
 pub struct Bits {
     pub vec: Vec<u8>,
 }
-#[derive(Debug)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+/// ### Fields
+/// previous:
+///     - this always holds the value of arg1 BEFORE any operations
+///     - tho uesless if arg3 is provided as the target register
+/// result:
+///     - this always holds the numerical result of an operation
+///     - for convience' sake, so it doesn't need to be read out again
+/// carry:
+///     - signifies if the carry flag needing to be set by the caller
+///     - is set when the result is larger than the current CPU Bittage supports
+///     - it's an over-/underflow flag for unsigned operations only
 pub struct ByteOpResult {
     pub previous: DSB,
+    pub result: DSB,
+    pub carry: bool,
 }
 #[derive(Debug)]
 pub struct Flag {
@@ -56,12 +70,12 @@ pub struct Registers {
 pub struct Flags {
     pub all: HashMap<String, Flag>,
 }
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Resource)]
 pub struct ProgramSettings {
     pub autostep: bool,
     pub autostep_lines: usize,
 }
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Resource, Reflect)]
 pub struct ActiveProgram {
     /// Contents of the entire program
     pub contents: String,
@@ -76,9 +90,10 @@ pub struct ActiveProgram {
     pub arg2: ProgramArg,
     pub arg3: ProgramArg,
 }
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Reflect)]
 pub struct ProgramArg {
     /// Optional value of the argument, set during the Decode stage.
+    #[reflect(ignore)]
     pub value: Option<DSB>,
     pub arg_type: ArgType,
 }
@@ -102,9 +117,15 @@ pub trait ByteOperations {
     fn sub(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
     fn mul(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
     fn div(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
+    fn bitand(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
+    fn bitor(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
+    fn bitxor(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
+    fn bitnot(&self) -> Result<ByteOpResult, RizeError>;
+    fn bitshl(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
+    fn bitshr(&self, data: DSB) -> Result<ByteOpResult, RizeError>;
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Reflect)]
 pub enum OpCode {
     #[default]
     None,
@@ -130,14 +151,14 @@ pub enum OpCode {
     WDM,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Reflect)]
 pub enum ArgType {
     #[default]
     None,
     Error,
     Register(String),
-    MemAddr(u16),
-    Immediate(u16),
+    MemAddr(usize),
+    Immediate(usize),
     Symbol(String),
 }
 
@@ -145,7 +166,7 @@ pub enum ArgType {
 
 #[derive(Resource)]
 #[allow(dead_code)]
-pub struct FileCheckTimer(Timer);
+pub struct FileCheckTimer(pub Timer);
 
 #[derive(Debug, Default, Resource)]
 pub struct AzmPrograms(pub Vec<(PathBuf, String)>);

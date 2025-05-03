@@ -21,8 +21,8 @@ use bevy_screen_diagnostics::{
     ScreenFrameDiagnosticsPlugin,
 };
 use display::DisplayMemory;
-use systems::setup_camera;
-use types::{ActiveProgram, AzmPrograms, ProgramSettings};
+use systems::{check_programs, setup_camera};
+use types::{ActiveProgram, AzmPrograms, FileCheckTimer, ProgramSettings};
 
 mod constants;
 mod display;
@@ -83,25 +83,32 @@ impl Plugin for RizeOne {
 
         #[cfg(debug_assertions)]
         app.insert_resource(types::Registers::default())
-            .insert_resource(types::SystemMemory::default());
+            .insert_resource(types::SystemMemory::default())
+            .add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default());
 
         app.insert_resource(DisplayMemory::init())
             .insert_resource(AzmPrograms::default())
             .insert_resource(ActiveProgram::default())
-            .insert_resource(ProgramSettings::default());
+            .insert_resource(ProgramSettings::default())
+            .insert_resource(FileCheckTimer(Timer::from_seconds(
+                0.25,
+                TimerMode::Repeating,
+            )));
 
-        app.add_systems(Startup, setup_camera);
-        // app.add_systems(OnEnter(CpuCycleStage::Startup), setup_registers);
+        app.add_plugins(ui::RizeOneUi)
+            .add_plugins(interpreter::RizeOneInterpreterPlugin);
 
-        app.add_plugins(ui::RizeOneUi);
-        // app.add_plugins(interpreter::RizeOneInterpreter);
+        app.add_systems(Startup, setup_camera)
+            .add_systems(Update, check_programs)
+            .add_systems(
+                OnEnter(CpuCycleStage::Startup),
+                systems::setup_registers,
+            );
 
         // #[cfg(debug_assertions)]
-        // app.add_plugins(
-        //     // StateInspectorPlugin::<CpuCycleStage>::default(),
-        //     // ResourceInspectorPlugin::<types::Registers>::default(),
-        //     // ResourceInspectorPlugin::<types::SystemMemory>::default(),
-        // );
+        // app.add_plugins(StateInspectorPlugin::<CpuCycleStage>::default())
+        //     .add_plugins(ResourceInspectorPlugin::<Registers>::default())
+        //     .add_plugins(ResourceInspectorPlugin::<SystemMemory>::default());
     }
 }
 

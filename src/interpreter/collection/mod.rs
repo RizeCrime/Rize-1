@@ -14,4 +14,11 @@ pub fn init_interpreters(mut r_interpreters: ResMut<InterpreterRes>) {
         "Rize-1 Interpreter".to_string(),
         Arc::new(AzmInterpreter {}),
     );
+    r_interpreters.active = Some(
+        r_interpreters
+            .all
+            .get("Rize-1 Interpreter")
+            .unwrap()
+            .clone(),
+    );
 }
