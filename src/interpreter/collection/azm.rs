@@ -126,9 +126,7 @@ impl Interpreter for AzmInterpreter {
         let raw_arg3 = if let Some(arg) = parts.get(3).copied() {
             arg.to_string()
         } else {
-            return Err(RizeError {
-                type_: RizeErrorType::Decode(format!("Couldn't retrieve the third argument from instruction: \"{}\".", program.line))
-            });
+            String::new()
         };
 
         // Retrieving symbols (e.g. labels) and saving them
