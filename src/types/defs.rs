@@ -63,13 +63,24 @@ pub struct ProgramSettings {
 }
 #[derive(Debug, Default, Resource)]
 pub struct ActiveProgram {
+    /// Contents of the entire program
     pub contents: String,
+    /// Symbols are stored in a HashMap, where:
+    /// - String: the symbol name
+    /// - usize: the line number in the program where the symbol is defined
     pub symbols: HashMap<String, usize>,
+    /// Last fetched program line
     pub line: String,
     pub opcode: OpCode,
-    pub arg1: ArgType,
-    pub arg2: ArgType,
-    pub arg3: ArgType,
+    pub arg1: ProgramArg,
+    pub arg2: ProgramArg,
+    pub arg3: ProgramArg,
+}
+#[derive(Debug, Clone, Default)]
+pub struct ProgramArg {
+    /// Optional value of the argument, set during the Decode stage.
+    pub value: Option<DSB>,
+    pub arg_type: ArgType,
 }
 
 #[derive(Debug, PartialEq, Eq)]
