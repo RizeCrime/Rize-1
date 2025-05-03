@@ -1,8 +1,11 @@
 # Style Guide
 
+All of the below generally applies to all branches, but frequent exceptions are made for refactor and/or dev branches.
+
 ## General Principles
 
 - **Clarity is Key:** Write code that is easy to understand and maintain. If it works and is readable, it's generally acceptable.
+- **Follow-ability:** The code itself should also be able to serve as a Learning Resource. Code that is easy to follow and understand for a beginner may be preferable to 'Idiomatic' code. (Leave a `### Dev Metadata` comment with your reasoning above.)
 - **Use `cargo fmt`:** Ensure all code is formatted using `cargo fmt` before committing.
 
 ## Me-Specific Guideline Additions
