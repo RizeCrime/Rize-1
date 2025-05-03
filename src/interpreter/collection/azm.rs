@@ -201,9 +201,9 @@ impl Interpreter for AzmInterpreter {
 
         let execution_result = match program.opcode {
             OpCode::MOV => mov(arg1, arg2, registers, &memory),
-            OpCode::ADD => add(arg1, arg2, arg3, registers),
-            OpCode::SUB => sub(arg1, arg2, arg3, registers),
-            OpCode::MUL => mul(arg1, arg2, arg3, registers),
+            OpCode::ADD => add(arg1, arg2, registers),
+            OpCode::SUB => sub(arg1, arg2, registers),
+            OpCode::MUL => mul(arg1, arg2, registers),
             OpCode::DIV => div(arg1, arg2, arg3, registers),
             OpCode::ST => st(arg1, arg2, &memory),
             OpCode::LD => ld(arg1, arg2, registers, &memory),

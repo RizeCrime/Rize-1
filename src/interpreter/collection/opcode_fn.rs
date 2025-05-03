@@ -6,8 +6,8 @@ use crate::{
     constants::{FLAG_CARRY, FLAG_ZERO, PROGRAM_COUNTER},
     display::DisplayMemory,
     types::{
-        ActiveProgram, ArgType, ByteOpResult, ByteOperations, ProgramArg,
-        Registers, RizeError, RizeErrorType, SystemMemory, DSB,
+        ArgType, ByteOpResult, ByteOperations, ProgramArg, Registers,
+        RizeError, RizeErrorType, SystemMemory, DSB,
     },
 };
 
@@ -61,7 +61,6 @@ pub fn mov(
 pub fn add(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
-    arg3: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -75,17 +74,11 @@ pub fn add(
         });
     }
 
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("Fix any errors that lead here.")
-    } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("Fix any errors that lead here.")
-    };
+    let reg1 = registers
+        .get(&arg1.arg_type.as_string())
+        .expect("ADD arg1 register must exist");
 
-    let result: ByteOpResult = target.byte.add(v2)?;
+    let result = reg1.byte.add(v2)?;
 
     set_flags(registers, result);
 
@@ -95,7 +88,6 @@ pub fn add(
 pub fn sub(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
-    arg3: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -109,129 +101,39 @@ pub fn sub(
         });
     }
 
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("Fix any errors that lead here.")
-    } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("Fix any errors that lead here.")
-    };
+    let reg1 = registers
+        .get(&arg1.arg_type.as_string())
+        .expect("SUB arg1 register must exist");
 
-    let result: ByteOpResult = target.byte.sub(v2)?;
+    let result = reg1.byte.sub(v2)?;
 
     set_flags(registers, result);
 
     Ok(())
 }
 
-// ---------------- //
-// Helper Functions //
-// ---------------- //
-
-fn set_flags(registers: &mut Registers, result: ByteOpResult) {
-    // Zero Flag
-    if result.result == 0u8.into() {
-        let _ = registers.get(FLAG_ZERO).unwrap().write(DSB::Flag(true));
-    } else {
-        let _ = registers.get(FLAG_ZERO).unwrap().write(DSB::Flag(false));
-    }
-
-    // Carry Flag
-    if result.carry {
-        let _ = registers.get(FLAG_CARRY).unwrap().write(DSB::Flag(true));
-    } else {
-        let _ = registers.get(FLAG_CARRY).unwrap().write(DSB::Flag(false));
-    }
-
-    // TODO: Implement Negative and Overflow flags based on ByteOpResult
-    // Negative Flag (Placeholder)
-    // let _ = registers.get(FLAG_NEGATIVE).unwrap().write(DSB::Flag(false));
-
-    // Overflow Flag (Placeholder)
-    // let _ = registers.get(FLAG_OVERFLOW).unwrap().write(DSB::Flag(false));
-}
-
-/// Determines the value of an operand (Register, Immediate, or Memory Address).
-pub fn get_operand_value(
-    registers: &mut Registers,
-    memory: &SystemMemory,
-    arg: &ArgType,
-) -> Result<Option<DSB>, RizeError> {
-    match &arg {
-        ArgType::Register(reg_name) => {
-            if let Some(register) = registers.get(&reg_name) {
-                return Ok(Some(register.read()?));
-            } else {
-                return Err(RizeError {
-                    type_: RizeErrorType::RegisterRead(format!(
-                        "Cannot get a register named \"{}\"",
-                        reg_name
-                    )),
-                });
-            }
-        }
-        ArgType::Immediate(imm) => return Ok(Some((*imm as u128).into())),
-        ArgType::MemAddr(addr) => {
-            if let Some(byte) = memory.bytes.get(&(*addr as usize)) {
-                return Ok(Some(byte.read()?));
-            } else {
-                return Err(RizeError {
-                    type_: RizeErrorType::MemoryRead(format!(
-                        "No byte found at address {}",
-                        addr
-                    )),
-                });
-            }
-        }
-        ArgType::Symbol(_sym) => {
-            return Ok(None);
-        }
-        ArgType::None => {
-            return Ok(None);
-        }
-        _ => {
-            return Err(RizeError {
-                type_: RizeErrorType::Decode(
-                    "Invalid/None ArgType encountered where value operand expected.".to_string(),
-                )
-            });
-        }
-    }
-}
-
 pub fn mul(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
-    arg3: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
 
     // Validate arg1 is a register if arg3 is not provided
-    if !matches!(arg3.arg_type, ArgType::Register(_))
-        && !matches!(arg1.arg_type, ArgType::Register(_))
-    {
+    if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
-                "MUL requires the first argument (arg1) to be a register when the third is omitted.".to_string(),
+                "MUL requires the first argument (arg1) to be a register."
+                    .to_string(),
             ),
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("MUL arg3 register should exist if type is Register")
-    } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("MUL arg1 register should exist if type is Register")
-    };
+    let reg1 = registers
+        .get(&arg1.arg_type.as_string())
+        .expect("MUL arg1 register must exist");
 
-    let result: ByteOpResult = target.byte.mul(v2)?;
+    let result = reg1.byte.mul(v2)?;
 
     set_flags(registers, result);
 
@@ -242,6 +144,7 @@ pub fn div(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
     arg3: &ProgramArg,
+
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -264,19 +167,33 @@ pub fn div(
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("DIV arg3 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg3_name = arg3.arg_type.as_string();
+
+    // Determine target register name (arg3 or arg1)
+    let target_name = if matches!(arg3.arg_type, ArgType::Register(_)) {
+        arg3_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("DIV arg1 register should exist if type is Register")
+        arg1_name.clone()
     };
 
-    let result: ByteOpResult = target.byte.div(v2)?;
+    // --- Step 1: Perform division using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("DIV arg1 register must exist");
+        reg1.byte.div(v2)? // Perform div on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("DIV target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -368,7 +285,7 @@ pub fn ld(
         register.write(source_value)?;
         Ok(())
     } else {
-        // This error should ideally be caught during Decode if the register name is invalid
+        // This error should idy be caught during Decode if the register name is invalid
         Err(RizeError {
             type_: RizeErrorType::RegisterWrite(format!(
                 "LD Error: Cannot get destination register '{}' (Was Decode successful?)",
@@ -382,6 +299,7 @@ pub fn and(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
     arg3: &ProgramArg,
+
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -397,19 +315,33 @@ pub fn and(
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("AND arg3 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg3_name = arg3.arg_type.as_string();
+
+    // Determine target register name (arg3 or arg1)
+    let target_name = if matches!(arg3.arg_type, ArgType::Register(_)) {
+        arg3_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("AND arg1 register should exist if type is Register")
+        arg1_name.clone()
     };
 
-    let result: ByteOpResult = target.byte.bitand(v2)?;
+    // --- Step 1: Perform bitwise AND using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("AND arg1 register must exist");
+        reg1.byte.bitand(v2)? // Perform bitand on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("AND target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -419,6 +351,7 @@ pub fn or(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
     arg3: &ProgramArg,
+
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -434,19 +367,33 @@ pub fn or(
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("OR arg3 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg3_name = arg3.arg_type.as_string();
+
+    // Determine target register name (arg3 or arg1)
+    let target_name = if matches!(arg3.arg_type, ArgType::Register(_)) {
+        arg3_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("OR arg1 register should exist if type is Register")
+        arg1_name.clone()
     };
 
-    let result: ByteOpResult = target.byte.bitor(v2)?;
+    // --- Step 1: Perform bitwise OR using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("OR arg1 register must exist");
+        reg1.byte.bitor(v2)? // Perform bitor on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("OR target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -456,6 +403,7 @@ pub fn xor(
     arg1: &ProgramArg,
     arg2: &ProgramArg,
     arg3: &ProgramArg,
+
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -471,19 +419,33 @@ pub fn xor(
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("XOR arg3 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg3_name = arg3.arg_type.as_string();
+
+    // Determine target register name (arg3 or arg1)
+    let target_name = if matches!(arg3.arg_type, ArgType::Register(_)) {
+        arg3_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("XOR arg1 register should exist if type is Register")
+        arg1_name.clone()
     };
 
-    let result: ByteOpResult = target.byte.bitxor(v2)?;
+    // --- Step 1: Perform bitwise XOR using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("XOR arg1 register must exist");
+        reg1.byte.bitxor(v2)? // Perform bitxor on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("XOR target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -504,19 +466,33 @@ pub fn not(
         });
     }
 
-    // Determine target register (arg2 if specified and valid, otherwise arg1)
-    let target = if matches!(arg2.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg2.arg_type.as_string())
-            .expect("NOT arg2 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg2_name = arg2.arg_type.as_string(); // Can be empty if arg2 is None/Not Register
+
+    // Determine target register name (arg2 if specified and valid, otherwise arg1)
+    let target_name = if matches!(arg2.arg_type, ArgType::Register(_)) {
+        arg2_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("NOT arg1 register should exist")
+        arg1_name.clone()
     };
 
-    let result: ByteOpResult = target.byte.bitnot()?;
+    // --- Step 1: Perform bitwise NOT using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("NOT arg1 register must exist");
+        reg1.byte.bitnot()? // Perform bitnot on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("NOT target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -525,7 +501,8 @@ pub fn not(
 pub fn shl(
     arg1: &ProgramArg,
     arg2: &ProgramArg, // Shift amount (Immediate or Register)
-    arg3: &ProgramArg, // Optional destination register
+    arg3: &ProgramArg,
+
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     // Validate arg1 is a register if arg3 is not provided
@@ -539,21 +516,35 @@ pub fn shl(
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("SHL arg3 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg3_name = arg3.arg_type.as_string();
+
+    // Determine target register name (arg3 or arg1)
+    let target_name = if matches!(arg3.arg_type, ArgType::Register(_)) {
+        arg3_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("SHL arg1 register should exist if type is Register")
+        arg1_name.clone()
     };
 
     let shift_amount = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
 
-    let result: ByteOpResult = target.byte.bitshl(shift_amount)?;
+    // --- Step 1: Perform bitwise SHL using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("SHL arg1 register must exist");
+        reg1.byte.bitshl(shift_amount)? // Perform bitshl on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("SHL target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -562,7 +553,8 @@ pub fn shl(
 pub fn shr(
     arg1: &ProgramArg,
     arg2: &ProgramArg, // Shift amount (Immediate or Register)
-    arg3: &ProgramArg, // Optional destination register
+    arg3: &ProgramArg,
+
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
     // Validate arg1 is a register if arg3 is not provided
@@ -576,21 +568,35 @@ pub fn shr(
         });
     }
 
-    // Determine target register (arg3 or arg1)
-    let target = if matches!(arg3.arg_type, ArgType::Register(_)) {
-        registers
-            .get(&arg3.arg_type.as_string())
-            .expect("SHR arg3 register should exist if type is Register")
+    let arg1_name = arg1.arg_type.as_string();
+    let arg3_name = arg3.arg_type.as_string();
+
+    // Determine target register name (arg3 or arg1)
+    let target_name = if matches!(arg3.arg_type, ArgType::Register(_)) {
+        arg3_name
     } else {
-        registers
-            .get(&arg1.arg_type.as_string())
-            .expect("SHR arg1 register should exist if type is Register")
+        arg1_name.clone()
     };
 
     let shift_amount = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
 
-    let result: ByteOpResult = target.byte.bitshr(shift_amount)?;
+    // --- Step 1: Perform bitwise SHR using arg1 ---
+    let result: ByteOpResult = {
+        let reg1 = registers
+            .get(&arg1_name)
+            .expect("SHR arg1 register must exist");
+        reg1.byte.bitshr(shift_amount)? // Perform bitshr on arg1's byte
+    }; // Mutable borrow of registers (for reg1) ends here
 
+    // --- Step 2: Write result to target ---
+    {
+        let target_reg = registers
+            .get(&target_name)
+            .expect("SHR target register must exist");
+        target_reg.write(result.result.clone())?; // Clone result.result for write
+    } // Mutable borrow of registers (for target_reg) ends here
+
+    // --- Step 3: Set flags ---
     set_flags(registers, result);
 
     Ok(())
@@ -599,7 +605,8 @@ pub fn shr(
 pub fn wdm(
     arg1: &ProgramArg, // RG (Register or Immediate, U16 with R in high byte, G in low)
     arg2: &ProgramArg, // BA (Register or Immediate, U16 with B in high byte, A in low)
-    arg3: &ProgramArg, // XY (Register or Immediate, U16 with X in high byte, Y in low)
+    arg3: &ProgramArg,
+
     display_memory: &mut DisplayMemory,
 ) -> Result<(), RizeError> {
     let rg_val = arg1
@@ -630,8 +637,8 @@ pub fn wdm(
 
     display_memory.set_pixel(x, y, [r, g, b, a])
 
-    // WDM does not typically affect flags
-    // No call to set_flags()
+    // WDM does not typiy affect flags
+    // No  to set_flags()
 }
 
 pub fn jmp(
@@ -682,6 +689,11 @@ pub fn jiz(
             )),
         })?
         .read()?;
+
+    debug!(
+        "src/interpreter/collection/opcode_fn.rs/jiz - zero_flag: {:?}",
+        zero_flag
+    );
 
     if zero_flag.as_usize() == 1 {
         // If zero flag is set, jump
@@ -752,4 +764,81 @@ pub fn jin(
     }
     // If negative flag is not set, do nothing
     Ok(())
+}
+
+// ---------------- //
+// Helper Functions //
+// ---------------- //
+
+fn set_flags(registers: &mut Registers, result: ByteOpResult) {
+    // Zero Flag
+    if result.result.as_usize() == 0 {
+        let _ = registers.get(FLAG_ZERO).unwrap().write(DSB::Flag(true));
+    } else {
+        let _ = registers.get(FLAG_ZERO).unwrap().write(DSB::Flag(false));
+    }
+
+    // Carry Flag
+    if result.carry {
+        let _ = registers.get(FLAG_CARRY).unwrap().write(DSB::Flag(true));
+    } else {
+        let _ = registers.get(FLAG_CARRY).unwrap().write(DSB::Flag(false));
+    }
+
+    // TODO: Implement Negative and Overflow flags based on ByteOpResult
+    // Negative Flag (Placeholder)
+    // let _ = registers.get(FLAG_NEGATIVE).unwrap().write(DSB::Flag(false));
+
+    // Overflow Flag (Placeholder)
+    // let _ = registers.get(FLAG_OVERFLOW).unwrap().write(DSB::Flag(false));
+}
+
+/// Determines the value of an operand (Register, Immediate, or Memory Address).
+pub fn get_operand_value(
+    registers: &mut Registers,
+    memory: &SystemMemory,
+    arg: &ArgType,
+) -> Result<Option<DSB>, RizeError> {
+    match &arg {
+        ArgType::Register(reg_name) => {
+            if let Some(register) = registers.get(&reg_name) {
+                return Ok(Some(register.read()?));
+            } else {
+                return Err(RizeError {
+                    type_: RizeErrorType::RegisterRead(format!(
+                        "Cannot get a register named \"{}\"",
+                        reg_name
+                    )),
+                });
+            }
+        }
+        ArgType::Immediate(imm) => {
+            return Ok(Some(DSB::from_cpu_bittage(*imm)))
+        }
+        ArgType::MemAddr(addr) => {
+            if let Some(byte) = memory.bytes.get(&(*addr as usize)) {
+                return Ok(Some(byte.read()?));
+            } else {
+                return Err(RizeError {
+                    type_: RizeErrorType::MemoryRead(format!(
+                        "No byte found at address {}",
+                        addr
+                    )),
+                });
+            }
+        }
+        ArgType::Symbol(_sym) => {
+            return Ok(None);
+        }
+        ArgType::None => {
+            return Ok(None);
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Decode(
+                    "Invalid/None ArgType encountered where value operand expected.".to_string(),
+                )
+            });
+        }
+    }
 }

@@ -2,6 +2,8 @@
 
 A visual and interactive learning resource for understanding low-level CPU architecture.
 
+[There's a Discord now](https://discord.gg/dmBw9vvC)
+
 ## What is Rize-1?
 
 Rize-1 is an educational project designed to help beginners learn about CPU architecture, assembly language, and low-level computing concepts. It features a custom Instruction Set Architecture (ISA) designed with learning in mind, removing some of the complexities found in real-world architectures while maintaining the core concepts.

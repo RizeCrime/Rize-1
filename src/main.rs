@@ -22,7 +22,10 @@ use bevy_screen_diagnostics::{
 };
 use display::DisplayMemory;
 use systems::{check_programs, setup_camera};
-use types::{ActiveProgram, AzmPrograms, FileCheckTimer, ProgramSettings};
+use types::{
+    ActiveProgram, AzmPrograms, Byte, FileCheckTimer, ProgramSettings,
+    Register, Registers,
+};
 
 mod constants;
 mod display;
@@ -82,9 +85,12 @@ impl Plugin for RizeOne {
         app.init_state::<CpuCycleStage>();
 
         #[cfg(debug_assertions)]
-        app.insert_resource(types::Registers::default())
+        app.register_type::<ActiveProgram>()
+            .register_type::<Byte>()
+            .insert_resource(types::Registers::default())
             .insert_resource(types::SystemMemory::default())
-            .add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default());
+            .add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default())
+            .add_plugins(ResourceInspectorPlugin::<Registers>::default());
 
         app.insert_resource(DisplayMemory::init())
             .insert_resource(AzmPrograms::default())
@@ -99,7 +105,7 @@ impl Plugin for RizeOne {
             .add_plugins(interpreter::RizeOneInterpreterPlugin);
 
         app.add_systems(Startup, setup_camera)
-            .add_systems(Update, check_programs)
+            .add_systems(Update, (check_programs, update_debug))
             .add_systems(
                 OnEnter(CpuCycleStage::Startup),
                 systems::setup_registers,
@@ -110,6 +116,13 @@ impl Plugin for RizeOne {
         //     .add_plugins(ResourceInspectorPlugin::<Registers>::default())
         //     .add_plugins(ResourceInspectorPlugin::<SystemMemory>::default());
     }
+}
+
+fn update_debug(mut registers: ResMut<Registers>) {
+    registers.all.iter_mut().for_each(|register| {
+        let byte = &mut register.1.byte;
+        byte.size = byte.dsb.lock().unwrap().as_ref().get_size();
+    });
 }
 
 #[derive(States, Default, Debug, Reflect, Hash, PartialEq, Eq, Clone, Copy)]

@@ -10,7 +10,7 @@ use super::types::{
     TogglePart, UiBit, UiConversion, UiElement, UiRegister, UiRoot, UiText,
 };
 use super::PixelDisplay;
-use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, PROGRAM_COUNTER};
+use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO, PROGRAM_COUNTER};
 use crate::display::DisplayMemory;
 use crate::types::{
     ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB,
@@ -123,12 +123,23 @@ pub fn setup_ui_registers(
             })
             .collect();
 
+        let reg_name: &str = match register.name.as_ref() {
+            FLAG_ZERO => { "Zero" },
+            FLAG_CARRY => { "Carry" },
+            FLAG_NEGATIVE => { "Negative" },
+            FLAG_OVERFLOW => { "Overflow" },
+            "pc" => { "Program Counter" },
+            "mdr" => { "Memory Data Register" },
+            "mar" => { "Memory Address Register" },
+            _ => { register.name.as_str() },
+        };
+
         let register_conversions: Entity = commands
             .spawn((
                 NodeBuilder::row().gap(8.0).build(),
                 Name::new(format!("ui-{}-conversions", register.name)),
             ))
-            .with_child((Text::new(format!("'{}': ", register.name)), UiText))
+            .with_child((Text::new(format!("'{}': ", reg_name)), UiText))
             .with_child((
                 Text::new("Dec"),
                 Name::new(format!("ui-{}-dec", register.name)),
@@ -141,12 +152,12 @@ pub fn setup_ui_registers(
                 UiText,
                 UiConversion,
             ))
-            .with_child((
-                Text::new("ASCII"),
-                Name::new(format!("ui-{}-utf8", register.name)),
-                UiText,
-                UiConversion,
-            ))
+            // .with_child((
+            //     Text::new("ASCII"),
+            //     Name::new(format!("ui-{}-utf8", register.name)),
+            //     UiText,
+            //     UiConversion,
+            // ))
             .id();
 
         commands
@@ -764,15 +775,6 @@ pub fn update_register_parsed(
             }
         }
 
-        // --- Parse and Update ASCII ---
-        let target_name = format!("ui-{name}-utf8");
-        for (mut text, ui_name) in q_ui.iter_mut() {
-            if ui_name.as_str() == target_name {
-                text.0 = dsb.as_utf8();
-                break;
-            }
-        }
-
         // --- Parse and Update Hex ---
         let target_name = format!("ui-{name}-hex");
         for (mut text, ui_name) in q_ui.iter_mut() {
@@ -781,6 +783,16 @@ pub fn update_register_parsed(
                 break;
             }
         }
+
+        // --- Parse and Update ASCII ---
+        // let target_name = format!("ui-{name}-utf8");
+        // for (mut text, ui_name) in q_ui.iter_mut() {
+        //     if ui_name.as_str() == target_name {
+        //         text.0 = dsb.as_utf8();
+        //         break;
+        //     }
+        // }
+
     }
 }
 

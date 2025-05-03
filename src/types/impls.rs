@@ -24,7 +24,7 @@ impl DSB {
 
     /// Helper function to create a DSB from a usize result, matching the size of the original DSB.
     fn from_usize_matching_size(result: usize, original: &DSB) -> DSB {
-        match original.get_bits() {
+        match original.get_size() {
             1 => DSB::Flag(result != 0),
             8 => DSB::U8(result as u8),
             16 => DSB::U16(result as u16),
@@ -33,7 +33,23 @@ impl DSB {
             128 => DSB::U128(result as u128),
             _ => unreachable!(
                 "Invalid bit size encountered: {}",
-                original.get_bits()
+                original.get_size()
+            ),
+        }
+    }
+
+    /// Creates a DSB from a usize, sized according to CPU_BITTAGE.
+    pub fn from_cpu_bittage(value: usize) -> DSB {
+        match CPU_BITTAGE {
+            1 => DSB::Flag(value != 0), // Treat size 1 as flag
+            8 => DSB::U8(value as u8),
+            16 => DSB::U16(value as u16),
+            32 => DSB::U32(value as u32),
+            64 => DSB::U64(value as u64),
+            128 => DSB::U128(value as u128),
+            _ => panic!(
+                "Invalid CPU_BITTAGE ({}) encountered! Choose 1, 8, 16, 32, 64, or 128",
+                CPU_BITTAGE
             ),
         }
     }
@@ -82,7 +98,7 @@ impl From<u128> for DSB {
 }
 impl From<usize> for DSB {
     fn from(value: usize) -> Self {
-        DSB::USIZE(value)
+        DSB::from_cpu_bittage(value)
     }
 }
 impl From<Bits> for DSB {
@@ -227,7 +243,7 @@ impl Not for DSB {
 }
 
 impl DSB {
-    pub fn get_bits(&self) -> usize {
+    pub fn get_size(&self) -> usize {
         match self {
             DSB::Flag(_) => 1,
             DSB::U8(_) => 8,
@@ -297,13 +313,13 @@ impl DSB {
 
     pub fn as_hex(&self) -> String {
         match self {
-            DSB::Flag(f) => format!("{:x}", *f as u8),
-            DSB::U8(n) => format!("{:x}", *n),
-            DSB::U16(n) => format!("{:x}", *n),
-            DSB::U32(n) => format!("{:x}", *n),
-            DSB::U64(n) => format!("{:x}", *n),
-            DSB::U128(n) => format!("{:x}", *n),
-            DSB::USIZE(n) => format!("{:x}", *n),
+            DSB::Flag(f) => format!("0x{:x}", *f as u8),
+            DSB::U8(n) => format!("0x{:x}", *n),
+            DSB::U16(n) => format!("0x{:x}", *n),
+            DSB::U32(n) => format!("0x{:x}", *n),
+            DSB::U64(n) => format!("0x{:x}", *n),
+            DSB::U128(n) => format!("0x{:x}", *n),
+            DSB::USIZE(n) => format!("0x{:x}", *n),
         }
     }
 }
@@ -318,6 +334,15 @@ impl Byte {
 
     pub fn as_decimal(&self) -> usize {
         self.dsb.lock().unwrap().as_usize()
+    }
+}
+
+impl Default for Byte {
+    fn default() -> Self {
+        Byte {
+            size: CPU_BITTAGE,
+            dsb: Mutex::new(Arc::new(DSB::default())),
+        }
     }
 }
 
@@ -339,9 +364,11 @@ impl ByteOperations for Byte {
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current + data);
+        // TODO: Calculate carry flag correctly
         Ok(ByteOpResult {
             previous: prev,
-            ..Default::default()
+            result: guard.as_ref().clone(), // Set result to the value AFTER operation
+            carry: false,                   // Placeholder for carry
         })
     }
     fn sub(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
@@ -349,29 +376,39 @@ impl ByteOperations for Byte {
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current - data);
-        Ok(ByteOpResult {
+        // TODO: Calculate carry/borrow flag correctly
+        let result = ByteOpResult {
             previous: prev,
-            ..Default::default()
-        })
+            result: guard.as_ref().clone(), // Set result to the value AFTER operation
+            carry: false,                   // Placeholder for carry/borrow
+        };
+
+        debug!("result: {:?}", result);
+
+        Ok(result)
     }
     fn mul(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
         *guard = Arc::new(current * data);
+        // TODO: Calculate carry/overflow flag correctly for multiplication
         Ok(ByteOpResult {
             previous: prev,
-            ..Default::default()
+            result: guard.as_ref().clone(), // Set result to the value AFTER operation
+            carry: false,                   // Placeholder
         })
     }
     fn div(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
-        *guard = Arc::new(current / data);
+        *guard = Arc::new(current / data); // DSB division handles division by zero
+                                           // Division doesn't typically set carry in the same way as add/sub
         Ok(ByteOpResult {
             previous: prev,
-            ..Default::default()
+            result: guard.as_ref().clone(), // Set result to the value AFTER operation
+            carry: false, // Placeholder (usually no carry for division)
         })
     }
     fn bitand(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
@@ -450,6 +487,7 @@ impl From<Bits> for Byte {
     fn from(value: Bits) -> Self {
         let dsb: DSB = value.into();
         Byte {
+            size: dsb.get_size(),
             dsb: Mutex::new(Arc::new(dsb)),
         }
     }
@@ -478,38 +516,55 @@ impl From<DSB> for Bits {
     fn from(value: DSB) -> Self {
         let mut bits = Vec::new();
         match value {
+            DSB::Flag(f) => {
+                // A flag is 1 bit: 1 if true, 0 if false
+                bits.push(f as u8);
+            }
             DSB::U8(mut n) => {
                 for _ in 0..8 {
                     bits.push(n & 1);
                     n >>= 1;
                 }
+                bits.reverse(); // Ensure correct bit order (MSB first)
             }
             DSB::U16(mut n) => {
                 for _ in 0..16 {
                     bits.push((n & 1u16) as u8);
                     n >>= 1;
                 }
+                bits.reverse();
             }
             DSB::U32(mut n) => {
                 for _ in 0..32 {
                     bits.push((n & 1u32) as u8);
                     n >>= 1;
                 }
+                bits.reverse();
             }
             DSB::U64(mut n) => {
                 for _ in 0..64 {
                     bits.push((n & 1u64) as u8);
                     n >>= 1;
                 }
+                bits.reverse();
             }
             DSB::U128(mut n) => {
                 for _ in 0..128 {
                     bits.push((n & 1u128) as u8);
                     n >>= 1;
                 }
+                bits.reverse();
             }
-            _ => {}
+            // Handle USIZE as u64 for bit representation, adjust if needed
+            DSB::USIZE(mut n) => {
+                for _ in 0..64 {
+                    bits.push((n & 1usize) as u8);
+                    n >>= 1;
+                }
+                bits.reverse();
+            }
         }
+        // No longer need global reverse here as it's handled per-arm
         Bits { vec: bits }
     }
 }
@@ -535,6 +590,7 @@ impl Register {
         Register {
             name: name.into(),
             byte: Byte {
+                size: 1,
                 dsb: Mutex::new(Arc::new(DSB::Flag(false))),
             },
         }

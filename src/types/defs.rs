@@ -23,8 +23,10 @@ pub enum DSB {
     U128(u128),
     USIZE(usize),
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Reflect)]
 pub struct Byte {
+    pub size: usize,
+    #[reflect(ignore)]
     pub dsb: Mutex<Arc<DSB>>,
 }
 #[derive(Debug)]
@@ -57,12 +59,12 @@ pub struct Flag {
 pub struct SystemMemory {
     pub bytes: HashMap<usize, Byte>,
 }
-#[derive(Debug)]
+#[derive(Debug, Reflect)]
 pub struct Register {
     pub name: String,
     pub byte: Byte,
 }
-#[derive(Debug, Default, Resource)]
+#[derive(Debug, Default, Resource, Reflect)]
 pub struct Registers {
     pub all: HashMap<String, Register>,
 }
