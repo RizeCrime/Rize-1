@@ -91,13 +91,13 @@ impl Plugin for RizeOne {
         app.register_type::<ActiveProgram>()
             .register_type::<Byte>()
             .register_type::<ChunkSize>()
-            .insert_resource(types::Registers::default())
-            .insert_resource(types::SystemMemory::default())
             .add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default())
             .add_plugins(ResourceInspectorPlugin::<ChunkSize>::default());
         // .add_plugins(ResourceInspectorPlugin::<Registers>::default());
 
-        app.insert_resource(DisplayMemory::init())
+        app.insert_resource(types::Registers::default())
+            .insert_resource(DisplayMemory::init())
+            .insert_resource(types::SystemMemory::default())
             .insert_resource(AzmPrograms::default())
             .insert_resource(ActiveProgram::default())
             .insert_resource(ChunkSize(100_000))
