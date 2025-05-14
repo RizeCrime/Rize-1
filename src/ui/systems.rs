@@ -1,9 +1,12 @@
+use std::fs::File;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use bevy::image::{ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use bevy::ui::FlexDirection::{Column, Row};
 use bevy_simple_text_input::{TextInput, TextInputSubmitEvent};
+use memmap2::Mmap;
 use rand::Rng;
 
 use super::types::{
@@ -13,7 +16,7 @@ use super::PixelDisplay;
 use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO, PROGRAM_COUNTER};
 use crate::display::DisplayMemory;
 use crate::types::{
-    ActiveProgram, AzmPrograms, Bits, ProgramSettings, Registers, DSB,
+    ActiveProgram, AzmFile, AzmPrograms, Bits, BufferSource, Piece, ProgramSettings, Registers, DSB
 };
 use crate::CpuCycleStage;
 
@@ -713,11 +716,25 @@ pub fn available_programs(
         {
             if *interaction == Interaction::Pressed {
                 info!("Full Path: {:?}", path_buf);
-                let program_contents: std::fs::File =
-                    std::fs::File::open(path_buf).unwrap();
 
-                r_program.as_mut().contents =
-                    std::io::read_to_string(&program_contents).unwrap();
+                let file: File = File::open(path_buf).unwrap();
+                let mmap: Mmap = unsafe { Mmap::map(&file).unwrap() };
+                let len: &usize = &mmap.len();
+                
+                let azm_file = AzmFile {
+                    original: Some(Arc::new(mmap)),
+                    pieces: vec![Piece {
+                        source: BufferSource::Original,
+                        offset: 0,
+                        length: *len,
+                    }],
+                    bytes_to_scan: *len,
+                    ..Default::default()
+                };
+
+                // remove symbols from previous programs
+                r_program.symbols.clear(); 
+                r_program.file = azm_file;
 
                 // Reset Program Counter
                 r_registers.get(PROGRAM_COUNTER).expect("Program Counter must exist!").write(0).unwrap();

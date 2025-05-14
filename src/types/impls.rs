@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use super::{ArgType, ProgramSettings};
+use super::{ArgType, AzmFile, ProgramSettings};
 
 // --- //
 // DSB //
@@ -673,6 +673,91 @@ impl Default for ProgramSettings {
             autostep: false,
             autostep_lines: 20,
         }
+    }
+}
+
+// ------- //
+// AzmFile //
+// ------- //
+impl AzmFile {
+    pub fn scan_chunk(&mut self, line_budget: usize) -> Vec<(String, usize)> {
+        if self.bytes_scanned == 0 && self.line_starts.is_empty() {
+            self.line_starts.push(0);
+        }
+
+        let content_slice = &self.original.clone().unwrap()[..];
+        let mut line_buffer: Vec<u8> = Vec::new();
+        let mut symbols: Vec<(String, usize)> = Vec::new();
+        let mut lines_processed = 0;
+
+        while lines_processed < line_budget
+            && self.bytes_scanned < self.bytes_to_scan
+        {
+            let byte = content_slice[self.bytes_scanned];
+            line_buffer.push(byte);
+            self.bytes_scanned += 1;
+            debug!("Line Buffer: {:?}", line_buffer);
+
+            debug!("Byte == '\\n': {:?}", byte == b'\n');
+            if byte == b'\n' {
+                debug!(
+                    "Line Buffer Starts with b\".\": {:?}",
+                    line_buffer.starts_with(b".")
+                );
+                if line_buffer.starts_with(b".") {
+                    let symbol_end = if line_buffer.ends_with(b"\r\n") {
+                        line_buffer.len() - 2
+                    } else {
+                        line_buffer.len() - 1
+                    };
+
+                    let symbol: (String, usize) = (
+                        String::from_utf8(line_buffer[1..symbol_end].to_vec())
+                            .unwrap(),
+                        self.line_starts.len() - 1,
+                    );
+                    info!("Symbol: {:?}", symbol);
+                    symbols.push(symbol);
+                }
+
+                if self.bytes_scanned < self.bytes_to_scan {
+                    self.line_starts.push(self.bytes_scanned);
+                    self.logical_lines = self.line_starts.len();
+                }
+
+                line_buffer.clear();
+                lines_processed += 1;
+            }
+        }
+
+        symbols
+    }
+
+    pub fn get_line(&self, index: usize) -> Option<String> {
+        // let logical_length: usize = self.pieces.iter().map(|p| p.length).sum();
+        if index >= self.logical_lines {
+            return None;
+        }
+
+        let curr_line_start: usize = self.line_starts[index];
+
+        // Handle the last line case
+        let next_line_start: usize = if index + 1 < self.line_starts.len() {
+            self.line_starts[index + 1]
+        } else {
+            // For the last line, use the total size of the file
+            self.bytes_to_scan
+        };
+
+        let mut line_bytes: Vec<u8> = Vec::new();
+        line_bytes.extend_from_slice(
+            &self.original.clone().unwrap()
+                [curr_line_start..(next_line_start - 1)],
+        );
+
+        let line = String::from_utf8(line_bytes).unwrap();
+
+        Some(line)
     }
 }
 

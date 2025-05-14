@@ -8,7 +8,8 @@ use crate::{
         N_GENERAL_PURPOSE_REGISTERS, PROGRAM_COUNTER,
     },
     interpreter::InterpreterRes,
-    types::{AzmPrograms, FileCheckTimer, Register, Registers},
+    types::{ActiveProgram, AzmPrograms, FileCheckTimer, Register, Registers},
+    ChunkSize,
 };
 
 pub fn setup_camera(mut commands: Commands) {
@@ -123,4 +124,20 @@ pub fn check_programs(
                 .to_string(),
         ));
     });
+}
+
+pub fn load_program(
+    mut r_program: ResMut<ActiveProgram>,
+    r_chunk_size: Res<ChunkSize>,
+) {
+    if r_program.file.original.is_none() {
+        return;
+    }
+    r_program
+        .file
+        .scan_chunk(r_chunk_size.0)
+        .iter()
+        .for_each(|(symbol, i)| {
+            let _ = r_program.symbols.insert(symbol.into(), *i);
+        });
 }

@@ -10,6 +10,7 @@ dependencies = [
  "bevy-inspector-egui",
  "bevy_screen_diagnostics",
  "bevy_simple_text_input",
+ "memmap2",
  "rand 0.9.1",
 ]
 

@@ -5,6 +5,7 @@ use std::{
 };
 
 use bevy::prelude::*;
+use memmap2::Mmap;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RizeError {
@@ -78,9 +79,37 @@ pub struct ProgramSettings {
     pub autostep_lines: usize,
 }
 #[derive(Debug, Default, Resource, Reflect)]
+pub enum BufferSource {
+    Original,
+    Add,
+    #[default]
+    None,
+}
+#[derive(Debug, Default, Resource, Reflect)]
+pub struct Piece {
+    pub source: BufferSource,
+    pub offset: usize,
+    pub length: usize,
+}
+#[derive(Debug, Default, Resource, Reflect)]
+pub struct AzmFile {
+    #[reflect(ignore)]
+    pub original: Option<Arc<Mmap>>,
+    pub add_buffer: Vec<char>,
+    pub pieces: Vec<Piece>,
+    #[reflect(ignore)]
+    pub line_starts: Vec<usize>,
+    pub logical_lines: usize,
+    // Possible Future Progress Bar ?
+    pub bytes_to_scan: usize,
+    pub bytes_scanned: usize,
+}
+#[derive(Debug, Default, Resource, Reflect)]
 pub struct ActiveProgram {
     /// Contents of the entire program
+    #[deprecated]
     pub contents: String,
+    pub file: AzmFile,
     /// Symbols are stored in a HashMap, where:
     /// - String: the symbol name
     /// - usize: the line number in the program where the symbol is defined

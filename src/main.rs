@@ -21,7 +21,7 @@ use bevy_screen_diagnostics::{
     ScreenFrameDiagnosticsPlugin,
 };
 use display::DisplayMemory;
-use systems::{check_programs, setup_camera};
+use systems::{check_programs, load_program, setup_camera};
 use types::{
     ActiveProgram, AzmPrograms, Byte, FileCheckTimer, ProgramSettings,
     Registers,
@@ -78,6 +78,9 @@ fn main() {
     bevy_app.run();
 }
 
+#[derive(Debug, Default, Resource, Reflect)]
+pub struct ChunkSize(usize);
+
 pub struct RizeOne;
 
 impl Plugin for RizeOne {
@@ -87,14 +90,17 @@ impl Plugin for RizeOne {
         #[cfg(debug_assertions)]
         app.register_type::<ActiveProgram>()
             .register_type::<Byte>()
+            .register_type::<ChunkSize>()
             .insert_resource(types::Registers::default())
             .insert_resource(types::SystemMemory::default())
             .add_plugins(ResourceInspectorPlugin::<ActiveProgram>::default())
-            .add_plugins(ResourceInspectorPlugin::<Registers>::default());
+            .add_plugins(ResourceInspectorPlugin::<ChunkSize>::default());
+        // .add_plugins(ResourceInspectorPlugin::<Registers>::default());
 
         app.insert_resource(DisplayMemory::init())
             .insert_resource(AzmPrograms::default())
             .insert_resource(ActiveProgram::default())
+            .insert_resource(ChunkSize(100_000))
             .insert_resource(ProgramSettings::default())
             .insert_resource(FileCheckTimer(Timer::from_seconds(
                 0.25,
@@ -105,14 +111,15 @@ impl Plugin for RizeOne {
             .add_plugins(interpreter::RizeOneInterpreterPlugin);
 
         app.add_systems(Startup, setup_camera)
-            .add_systems(Update, (check_programs, update_debug))
+            .add_systems(Update, (check_programs, load_program, update_debug))
             .add_systems(
                 OnEnter(CpuCycleStage::Startup),
                 systems::setup_registers,
             );
 
         // #[cfg(debug_assertions)]
-        // app.add_plugins(StateInspectorPlugin::<CpuCycleStage>::default())
+        // app
+        //     .add_plugins(StateInspectorPlugin::<CpuCycleStage>::default())
         //     .add_plugins(ResourceInspectorPlugin::<Registers>::default())
         //     .add_plugins(ResourceInspectorPlugin::<SystemMemory>::default());
     }

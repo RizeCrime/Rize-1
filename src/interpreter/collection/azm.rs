@@ -79,11 +79,8 @@ impl Interpreter for AzmInterpreter {
     ) -> Option<()> {
         let pc: &mut Register = registers.get(PROGRAM_COUNTER).unwrap();
 
-        let mut lines_iter =
-            program.contents.lines().skip(pc.byte.as_decimal() as usize);
-
         loop {
-            if let Some(line) = lines_iter.next() {
+            if let Some(line) = program.file.get_line(pc.byte.as_decimal()) {
                 let next = line.trim().to_string();
 
                 if next.is_empty()
@@ -136,28 +133,29 @@ impl Interpreter for AzmInterpreter {
         };
 
         // Retrieving symbols (e.g. labels) and saving them
-        program.symbols = program
-            .contents
-            .lines()
-            .enumerate()
-            .filter_map(|(n, line)| {
-                let trimmed_line = line.trim();
-                if trimmed_line.starts_with('.') {
-                    let symbol_name = &trimmed_line[1..];
-                    if symbol_name.len() > 0
-                        && symbol_name.len() <= 16
-                        && symbol_name.chars().all(char::is_alphabetic)
-                    {
-                        // Save the symbol name with the line in which it is located
-                        Some((symbol_name.to_string(), n + 1))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect();
+
+        // program.symbols = program
+        //     .contents
+        //     .lines()
+        //     .enumerate()
+        //     .filter_map(|(n, line)| {
+        //         let trimmed_line = line.trim();
+        //         if trimmed_line.starts_with('.') {
+        //             let symbol_name = &trimmed_line[1..];
+        //             if symbol_name.len() > 0
+        //                 && symbol_name.len() <= 16
+        //                 && symbol_name.chars().all(char::is_alphabetic)
+        //             {
+        //                 // Save the symbol name with the line in which it is located
+        //                 Some((symbol_name.to_string(), n + 1))
+        //             } else {
+        //                 None
+        //             }
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .collect();
 
         // Store processed OpCode into ActiveProgram, to retrieve it at Execute stage
         if let Ok(opcode) = OpCode::from_str(raw_opcode.as_str()) {
