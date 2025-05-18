@@ -13,10 +13,14 @@ use super::types::{
     TogglePart, UiBit, UiConversion, UiElement, UiRegister, UiRoot, UiText,
 };
 use super::PixelDisplay;
-use crate::constants::{DISPLAY_HEIGHT, DISPLAY_WIDTH, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO, PROGRAM_COUNTER};
+use crate::constants::{
+    DISPLAY_HEIGHT, DISPLAY_WIDTH, FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW,
+    FLAG_ZERO, PROGRAM_COUNTER,
+};
 use crate::display::DisplayMemory;
 use crate::types::{
-    ActiveProgram, AzmFile, AzmPrograms, Bits, BufferSource, Piece, ProgramSettings, Registers, DSB
+    ActiveProgram, AzmFile, AzmPrograms, Bits, BufferSource, Piece,
+    ProgramSettings, Registers, DSB,
 };
 use crate::CpuCycleStage;
 
@@ -127,14 +131,14 @@ pub fn setup_ui_registers(
             .collect();
 
         let reg_name: &str = match register.name.as_ref() {
-            FLAG_ZERO => { "Zero" },
-            FLAG_CARRY => { "Carry" },
-            FLAG_NEGATIVE => { "Negative" },
-            FLAG_OVERFLOW => { "Overflow" },
-            "pc" => { "Program Counter" },
-            "mdr" => { "Memory Data Register" },
-            "mar" => { "Memory Address Register" },
-            _ => { register.name.as_str() },
+            FLAG_ZERO => "Zero",
+            FLAG_CARRY => "Carry",
+            FLAG_NEGATIVE => "Negative",
+            FLAG_OVERFLOW => "Overflow",
+            "pc" => "Program Counter",
+            "mdr" => "Memory Data Register",
+            "mar" => "Memory Address Register",
+            _ => register.name.as_str(),
         };
 
         let register_conversions: Entity = commands
@@ -575,7 +579,7 @@ pub fn update_control_panel(
             autostep_button.is_some() || autostep_input.is_some() {
 
                 let [
-                    (_b_entity, mut b_visibility, _b_name), 
+                    (_b_entity, mut b_visibility, _b_name),
                     (_i_entity, mut i_visibility, _i_name)
                 ] = q_autostep
                         .get_many_mut([
@@ -720,7 +724,7 @@ pub fn available_programs(
                 let file: File = File::open(path_buf).unwrap();
                 let mmap: Mmap = unsafe { Mmap::map(&file).unwrap() };
                 let len: &usize = &mmap.len();
-                
+
                 let azm_file = AzmFile {
                     original: Some(Arc::new(mmap)),
                     pieces: vec![Piece {
@@ -733,11 +737,15 @@ pub fn available_programs(
                 };
 
                 // remove symbols from previous programs
-                r_program.symbols.clear(); 
+                r_program.symbols.clear();
                 r_program.file = azm_file;
 
                 // Reset Program Counter
-                r_registers.get(PROGRAM_COUNTER).expect("Program Counter must exist!").write(0).unwrap();
+                r_registers
+                    .get(PROGRAM_COUNTER)
+                    .expect("Program Counter must exist!")
+                    .write(0usize)
+                    .unwrap();
             }
         }
     });
@@ -753,7 +761,7 @@ pub fn update_registers(
     mut q_ui: Query<(&mut Text, &Name), With<UiBit>>,
 ) {
     for (name, register) in r_registers.all().iter() {
-        let dsb: DSB = register.read().unwrap();
+        let dsb: DSB = register.read();
 
         for (idx, bit) in Bits::from(dsb).vec.iter().enumerate() {
             let target_name = format!("ui-{}-{idx}", name);
@@ -781,7 +789,7 @@ pub fn update_register_parsed(
     mut q_ui: Query<(&mut Text, &Name), With<UiConversion>>,
 ) {
     for (name, register) in r_registers.all().iter() {
-        let dsb: DSB = register.read().unwrap();
+        let dsb: DSB = register.read();
 
         // --- Parse and Update Decimal ---
         let target_name = format!("ui-{name}-dec");
@@ -809,7 +817,6 @@ pub fn update_register_parsed(
         //         break;
         //     }
         // }
-
     }
 }
 
@@ -863,9 +870,7 @@ pub fn update_display(
 
 fn border_color(color: Option<Color>) -> BorderColor {
     let Some(color) = color else {
-        return BorderColor(Color::linear_rgba(
-            255.0, 255.0, 255.0, 192.0,
-        ));
+        return BorderColor(Color::linear_rgba(255.0, 255.0, 255.0, 192.0));
     };
     BorderColor::from(color)
 }

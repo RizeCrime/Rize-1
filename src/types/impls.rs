@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use super::{ArgType, AzmFile, ProgramSettings};
+use super::{ArgType, AzmFile, ProgramArg, ProgramSettings, SystemMemory};
 
 // --- //
 // DSB //
@@ -81,11 +81,11 @@ impl From<u32> for DSB {
         DSB::U32(value)
     }
 }
-impl From<i32> for DSB {
-    fn from(value: i32) -> Self {
-        DSB::U32(value as u32)
-    }
-}
+// impl From<i32> for DSB {
+//     fn from(value: i32) -> Self {
+//         DSB::U32(value as u32)
+//     }
+// }
 impl From<u64> for DSB {
     fn from(value: u64) -> Self {
         DSB::U64(value)
@@ -335,6 +335,10 @@ impl Byte {
     pub fn as_decimal(&self) -> usize {
         self.dsb.lock().unwrap().as_usize()
     }
+
+    pub fn dsb(&self) -> DSB {
+        self.dsb.lock().unwrap().as_ref().clone()
+    }
 }
 
 impl Default for Byte {
@@ -400,11 +404,16 @@ impl ByteOperations for Byte {
         })
     }
     fn div(&self, data: DSB) -> Result<ByteOpResult, RizeError> {
+        if data.as_usize() == 0 {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute("Division by Zero.".to_string()),
+            });
+        }
         let mut guard = self.dsb.lock().unwrap();
         let current = guard.as_ref().clone();
         let prev = current.clone();
-        *guard = Arc::new(current / data); // DSB division handles division by zero
-                                           // Division doesn't typically set carry in the same way as add/sub
+        *guard = Arc::new(current / data);
+        // Division doesn't typically set carry in the same way as add/sub
         Ok(ByteOpResult {
             previous: prev,
             result: guard.as_ref().clone(), // Set result to the value AFTER operation
@@ -486,6 +495,15 @@ impl ByteOperations for Byte {
 impl From<Bits> for Byte {
     fn from(value: Bits) -> Self {
         let dsb: DSB = value.into();
+        Byte {
+            size: dsb.get_size(),
+            dsb: Mutex::new(Arc::new(dsb)),
+        }
+    }
+}
+
+impl From<DSB> for Byte {
+    fn from(dsb: DSB) -> Self {
         Byte {
             size: dsb.get_size(),
             dsb: Mutex::new(Arc::new(dsb)),
@@ -576,6 +594,26 @@ impl From<&Byte> for Bits {
     }
 }
 
+// ------------- //
+// System Memory //
+// ------------- //
+impl SystemMemory {
+    pub fn write(&mut self, addr: usize, value: DSB) {
+        // println!(
+        //     "Writing to Memory: \n\tAddr:\t{:?} \n\tVal:\t{:?}",
+        //     addr, value
+        // );
+        let _ = self.bytes.insert(addr, value.into());
+    }
+
+    pub fn read(&mut self, addr: usize) -> DSB {
+        self.bytes
+            .entry(addr)
+            .or_insert(DSB::from_cpu_bittage(0).into())
+            .dsb()
+    }
+}
+
 // -------- //
 // Register //
 // -------- //
@@ -596,8 +634,10 @@ impl Register {
         }
     }
 
-    pub fn read(&self) -> Result<DSB, RizeError> {
-        self.byte.read()
+    pub fn read(&self) -> DSB {
+        self.byte.read().expect(
+            format!("Failed to Read Register: {:?}", self.name).as_ref(),
+        )
     }
 
     pub fn write<D: Into<DSB>>(&self, data: D) -> Result<(), RizeError> {
@@ -605,8 +645,13 @@ impl Register {
         Ok(())
     }
 
+    pub fn write_dsb(&self, data: DSB) -> Result<(), RizeError> {
+        self.byte.write(data.into())?;
+        Ok(())
+    }
+
     pub fn inc(&self) -> Result<(), RizeError> {
-        self.byte.write(self.byte.read()? + 1.into())?;
+        self.byte.write(self.byte.read()? + 1usize.into())?;
         Ok(())
     }
 }
@@ -758,6 +803,32 @@ impl AzmFile {
         let line = String::from_utf8(line_bytes).unwrap();
 
         Some(line)
+    }
+}
+
+// ---------- //
+// ProgramArg //
+// ---------- //
+impl ProgramArg {
+    pub fn register(name: &str) -> Self {
+        ProgramArg {
+            value: None,
+            arg_type: ArgType::Register(name.into()),
+        }
+    }
+
+    pub fn immediate(i: usize) -> Self {
+        ProgramArg {
+            value: Some(i.into()),
+            arg_type: ArgType::Immediate(i),
+        }
+    }
+
+    pub fn memaddr(a: usize) -> Self {
+        ProgramArg {
+            value: Some(a.into()),
+            arg_type: ArgType::MemAddr(a),
+        }
     }
 }
 

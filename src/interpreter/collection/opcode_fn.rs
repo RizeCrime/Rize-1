@@ -6,7 +6,7 @@ use crate::{
     constants::{FLAG_CARRY, FLAG_ZERO, PROGRAM_COUNTER},
     display::DisplayMemory,
     types::{
-        ArgType, ByteOpResult, ByteOperations, ProgramArg, Registers,
+        ArgType, Byte, ByteOpResult, ByteOperations, ProgramArg, Registers,
         RizeError, RizeErrorType, SystemMemory, DSB,
     },
 };
@@ -18,7 +18,7 @@ pub fn mov(
     arg1: &ProgramArg, // Destination (Register or MemAddr)
     arg2: &ProgramArg, // Source (Register, Immediate, MemAddr)
     registers: &mut Registers,
-    memory: &SystemMemory,
+    memory: &mut SystemMemory,
 ) -> Result<(), RizeError> {
     let source_value: DSB =
         arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
@@ -37,17 +37,12 @@ pub fn mov(
             }
         }
         ArgType::MemAddr(dest_addr) => {
-            if let Some(byte) = memory.bytes.get(dest_addr) {
-                byte.write(source_value)?;
-                Ok(())
-            } else {
-                Err(RizeError {
-                    type_: RizeErrorType::MemoryRead(format!(
-                        "No byte found at address {}",
-                        dest_addr
-                    )),
-                })
-            }
+            let byte = memory
+                .bytes
+                .entry(*dest_addr)
+                .or_insert_with(|| Byte::default());
+            byte.write(source_value)?;
+            Ok(())
         }
         _ => Err(RizeError {
             type_: RizeErrorType::Execute(
@@ -63,16 +58,32 @@ pub fn add(
     arg2: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-
     if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
-                "ADD requires the first argument (arg1) to be a register."
-                    .to_string(),
+                "ADD requires arg1 to be a Register.".to_string(),
             ),
         });
     }
+
+    let v2 = match &arg2.arg_type {
+        ArgType::Immediate(i) => DSB::from_cpu_bittage(*i),
+        ArgType::Register(r) => {
+            let dsb: DSB = registers
+                .get(&r)
+                .expect("ADD arg2 Register must exist.")
+                .read();
+            dsb
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute(
+                    "ADD requires arg2 to be either a Register, or an Immediate."
+                        .to_string(),
+                ),
+            });
+        }
+    };
 
     let reg1 = registers
         .get(&arg1.arg_type.as_string())
@@ -90,16 +101,32 @@ pub fn sub(
     arg2: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-
     if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
-                "SUB requires the first argument (arg1) to be a register."
-                    .to_string(),
+                "SUB requires arg1 to be a Register.".to_string(),
             ),
         });
     }
+
+    let v2: DSB = match &arg2.arg_type {
+        ArgType::Immediate(i) => DSB::from_cpu_bittage(*i),
+        ArgType::Register(r) => {
+            let dsb: DSB = registers
+                .get(&r)
+                .expect("SUB arg2 Register must exist.")
+                .read();
+            dsb
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute(
+                    "SUB requires arg2 to be either a Register, or an Immediate."
+                    .to_string()
+                )
+            });
+        }
+    };
 
     let reg1 = registers
         .get(&arg1.arg_type.as_string())
@@ -117,17 +144,32 @@ pub fn mul(
     arg2: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-
-    // Validate arg1 is a register if arg3 is not provided
     if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
-                "MUL requires the first argument (arg1) to be a register."
-                    .to_string(),
+                "MUL requires arg1 to be a Register.".to_string(),
             ),
         });
     }
+
+    let v2 = match &arg2.arg_type {
+        ArgType::Immediate(i) => DSB::from_cpu_bittage(*i),
+        ArgType::Register(r) => {
+            let dsb: DSB = registers
+                .get(&r)
+                .expect("MUL arg2 Register must exist.")
+                .read();
+            dsb
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute(
+                    "MUL requires arg2 to be either a Register, or an Immediate."
+                        .to_string()
+                )
+            });
+        }
+    };
 
     let reg1 = registers
         .get(&arg1.arg_type.as_string())
@@ -145,16 +187,6 @@ pub fn div(
     arg2: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-
-    // Check for division by zero
-    if v2.as_usize() == 0 {
-        return Err(RizeError {
-            type_: RizeErrorType::Execute("Division by zero".to_string()),
-        });
-    }
-
-    // Validate arg1 is a register
     if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
@@ -164,113 +196,75 @@ pub fn div(
         });
     }
 
+    let v2 = match &arg2.arg_type {
+        ArgType::Immediate(i) => DSB::from_cpu_bittage(*i),
+        ArgType::Register(r) => {
+            let dsb: DSB = registers
+                .get(&r)
+                .expect("DIV arg2 Register must exist.")
+                .read();
+            dsb
+        }
+        _ => {
+            return Err(RizeError {
+                type_: RizeErrorType::Execute(
+                    "DIV requires arg2 to be either a Register, or an Immediate."
+                        .to_string()
+                )
+            });
+        }
+    };
+
     let reg1 = registers
         .get(&arg1.arg_type.as_string())
-        .expect("DIV arg1 register must exist");
+        .expect("DIV arg1 register must exist.");
 
-    // Perform division, result is written in-place to reg1.byte
     let result = reg1.byte.div(v2)?;
 
-    // --- Set flags ---
     set_flags(registers, result);
 
     Ok(())
 }
 
 pub fn st(
-    arg1: &ProgramArg, // Register containing Destination MemAddr
-    arg2: &ProgramArg, // Register containing Source Value
-    memory: &SystemMemory,
+    registers: &mut Registers,
+    memory: &mut SystemMemory,
 ) -> Result<(), RizeError> {
-    // Validate arguments are registers
-    if !matches!(arg1.arg_type, ArgType::Register(_)) {
-        return Err(RizeError {
-            type_: RizeErrorType::Execute(
-                "ST requires the first argument (arg1) to be a Register (containing the address).".to_string(),
-            ),
-        });
-    }
-    if !matches!(arg2.arg_type, ArgType::Register(_)) {
-        return Err(RizeError {
-            type_: RizeErrorType::Execute(
-                "ST requires the second argument (arg2) to be a Register (containing the value).".to_string(),
-            ),
-        });
-    }
+    memory.write(
+        registers
+            .get("MAR")
+            .expect("Memory Address Register must exist.")
+            .read()
+            .as_usize(),
+        registers
+            .get("MDR")
+            .expect("Memory Data Register must exist.")
+            .read(),
+    );
 
-    let dest_addr_dsb = arg1.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-    let source_value: DSB =
-        arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-
-    // Convert address DSB to usize
-    let dest_addr = dest_addr_dsb.as_usize(); // Potential truncation handled by as_usize
-
-    if let Some(byte) = memory.bytes.get(&dest_addr) {
-        byte.write(source_value)?;
-        Ok(())
-    } else {
-        Err(RizeError {
-            type_: RizeErrorType::MemoryWrite(format!(
-                "ST Error: No byte found at address {} (from reg '{}') to store value (from reg '{}')",
-                dest_addr, arg1.arg_type.as_string(), arg2.arg_type.as_string()
-            )),
-        })
-    }
+    Ok(())
 }
 
 pub fn ld(
-    arg1: &ProgramArg, // Destination Register
-    arg2: &ProgramArg, // Register containing Source MemAddr
     registers: &mut Registers,
-    memory: &SystemMemory,
+    memory: &mut SystemMemory,
 ) -> Result<(), RizeError> {
-    // Validate arguments are registers
-    if !matches!(arg1.arg_type, ArgType::Register(_)) {
-        return Err(RizeError {
-            type_: RizeErrorType::Execute(
-                "LD requires the first argument (arg1) to be the Destination Register.".to_string(),
-            ),
-        });
-    }
-    if !matches!(arg2.arg_type, ArgType::Register(_)) {
-        return Err(RizeError {
-            type_: RizeErrorType::Execute(
-                "LD requires the second argument (arg2) to be a Register (containing the address).".to_string(),
-            ),
-        });
-    }
+    registers
+        .get("MAR")
+        .expect("Memory Address Register must exist.")
+        .read()
+        .as_usize();
 
-    let dest_reg_name = arg1.arg_type.as_string();
-    let source_addr_dsb = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
+    let addr: usize = registers
+        .get("MAR")
+        .expect("Memory Address Register must exist.")
+        .read()
+        .as_usize();
 
-    // Convert address DSB to usize
-    let source_addr = source_addr_dsb.as_usize(); // Potential truncation handled by as_usize
-
-    // Read value from memory
-    let source_value = if let Some(byte) = memory.bytes.get(&source_addr) {
-        byte.read()?
-    } else {
-        return Err(RizeError {
-            type_: RizeErrorType::MemoryRead(format!(
-                "LD Error: No byte found at address {} (from reg '{}') to load value into reg '{}'",
-                source_addr, arg2.arg_type.as_string(), dest_reg_name
-            )),
-        });
-    };
-
-    // Write value to destination register
-    if let Some(register) = registers.get(&dest_reg_name) {
-        register.write(source_value)?;
-        Ok(())
-    } else {
-        // This error should idy be caught during Decode if the register name is invalid
-        Err(RizeError {
-            type_: RizeErrorType::RegisterWrite(format!(
-                "LD Error: Cannot get destination register '{}' (Was Decode successful?)",
-                dest_reg_name
-            )),
-        })
-    }
+    registers
+        .get("MDR")
+        .expect("Memory Data Register must exist.")
+        .write(memory.read(addr))
 }
 
 pub fn and(
@@ -278,17 +272,24 @@ pub fn and(
     arg2: &ProgramArg,
     registers: &mut Registers,
 ) -> Result<(), RizeError> {
-    let v2 = arg2.value.clone().expect(EXPECT_PREVIOUSLY_VERIFIED);
-
-    // Validate arg1 is a register
     if !matches!(arg1.arg_type, ArgType::Register(_)) {
         return Err(RizeError {
             type_: RizeErrorType::Execute(
-                "AND requires the first argument (arg1) to be a register."
-                    .to_string(),
+                "AND requires arg1 to be a Register.".to_string(),
             ),
         });
     }
+
+    let v2: DSB = match &arg2.arg_type {
+        ArgType::Immediate(i) => DSB::from_cpu_bittage(*i),
+        ArgType::Register(r) => {
+            let dsb: DSB = registers.get(&r).expect("AND requires arg2 to be either a Register, or an Immediate.").read();
+            dsb
+        }
+        _ => {
+            return Err(RizeError { type_: RizeErrorType::Execute("AND requires arg2 to be either a Register, or an Immediate.".to_string()) });
+        }
+    };
 
     let reg1 = registers
         .get(&arg1.arg_type.as_string())
@@ -536,7 +537,7 @@ pub fn jiz(
                 FLAG_ZERO
             )),
         })?
-        .read()?;
+        .read();
 
     debug!(
         "src/interpreter/collection/opcode_fn.rs/jiz - zero_flag: {:?}",
@@ -591,7 +592,7 @@ pub fn jin(
                 crate::constants::FLAG_NEGATIVE
             )),
         })?
-        .read()?;
+        .read();
 
     if negative_flag.as_usize() == 1 {
         // If negative flag is set, jump
@@ -650,7 +651,7 @@ pub fn get_operand_value(
     match &arg {
         ArgType::Register(reg_name) => {
             if let Some(register) = registers.get(&reg_name) {
-                return Ok(Some(register.read()?));
+                return Ok(Some(register.read()));
             } else {
                 return Err(RizeError {
                     type_: RizeErrorType::RegisterRead(format!(

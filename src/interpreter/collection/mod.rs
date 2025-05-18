@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
+#[cfg(test)]
+mod tests;
+
 mod azm;
 mod opcode_fn;
 pub use azm::*;

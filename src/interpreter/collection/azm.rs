@@ -187,7 +187,7 @@ impl Interpreter for AzmInterpreter {
         &self,
         program: &mut ActiveProgram,
         registers: &mut Registers,
-        memory: &mut SystemMemory,
+        mut memory: &mut SystemMemory,
         display_memory: &mut DisplayMemory,
         mut sn_cpu_stage: ResMut<NextState<CpuCycleStage>>,
     ) -> Option<()> {
@@ -197,13 +197,13 @@ impl Interpreter for AzmInterpreter {
         let symbols = &program.symbols;
 
         let execution_result = match program.opcode {
-            OpCode::MOV => mov(arg1, arg2, registers, &memory),
+            OpCode::MOV => mov(arg1, arg2, registers, &mut memory),
             OpCode::ADD => add(arg1, arg2, registers),
             OpCode::SUB => sub(arg1, arg2, registers),
             OpCode::MUL => mul(arg1, arg2, registers),
             OpCode::DIV => div(arg1, arg2, registers),
-            OpCode::ST => st(arg1, arg2, &memory),
-            OpCode::LD => ld(arg1, arg2, registers, &memory),
+            OpCode::ST => st(registers, &mut memory),
+            OpCode::LD => ld(registers, &mut memory),
             OpCode::AND => and(arg1, arg2, registers),
             OpCode::OR => or(arg1, arg2, registers),
             OpCode::XOR => xor(arg1, arg2, registers),

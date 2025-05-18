@@ -96,12 +96,12 @@ Arguments on the other hand are limited to 16 bits in length.
 **Memory Related OPCODES**
 (This includes Registers)  
 
-| OPCODE | ARG1          | ARG2          | ARG3          |     |
-| ------ | ------------- | ------------- | ------------- | --- |
-| LD     |               |               |               |     |
-| ST     |               |               |               |     |
-| SWP    | Type:Register | Type:Register | Type:Register |     |
-| MOV    | Any           | Any           |               |     |
+| OPCODE | ARG1     | ARG2     | ARG3     |     |
+| ------ | -------- | -------- | -------- | --- |
+| LD     |          |          |          |     |
+| ST     |          |          |          |     |
+| SWP    | Register | Register | Register |     |
+| MOV    | Any      | Any      |          |     |
 
 _Memory OPCODE Descriptions:_
 
@@ -114,10 +114,10 @@ _Memory OPCODE Descriptions:_
 
 **ALU OPCODES**
 
-| OPCODE | ARG1          | ARG2          | ARG3          |
-| ------ | ------------- | ------------- | ------------- |
-| ADD    | Type:Register | Type:Register | Type:Register |
-| SUB    | Type:Register | Type:Register | Type:Register |
+| OPCODE | ARG1     | ARG2               | ARG3     |
+| ------ | -------- | ------------------ | -------- |
+| ADD    | Register | Register/Immediate | Register |
+| SUB    | Register | Register/Immediate | Register | 
 
 _ALU OPCODE Descriptions:_
 
